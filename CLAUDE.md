@@ -54,6 +54,7 @@ Pitch: "Every time you play, a recycling robot gets better at its job."
 ## Grasp record
 ```json
 {
+  "record_id": "9f1c2e7b4a6d4c0e8b3f5a2d7e9c1b04",
   "session_id": "s-20260926-0412",
   "player": "anon-3f2a",
   "timestamp": "2026-09-26T14:03:11Z",
@@ -67,3 +68,4 @@ Pitch: "Every time you play, a recycling robot gets better at its job."
 }
 ```
 `source` is one of `human`, `augmented`, or `robot`.
+`record_id` is a GUID (32 hex characters) set once when the record is created; the server uses it to ignore duplicate uploads.

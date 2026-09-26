@@ -56,6 +56,7 @@ Grasps are saved locally as JSON Lines (one record per line) in `grasps.jsonl` u
 
 ```json
 {
+  "record_id": "9f1c2e7b4a6d4c0e8b3f5a2d7e9c1b04",
   "session_id": "s-20260926-0412",
   "player": "anon-3f2a",
   "timestamp": "2026-09-26T14:03:11Z",
@@ -69,7 +70,7 @@ Grasps are saved locally as JSON Lines (one record per line) in `grasps.jsonl` u
 }
 ```
 
-Positions are in meters and rotations are quaternions written as [x, y, z, w]. The grasp is expressed in the item's frame, using its position and rotation but not its scale. `source` is `human` (a player's grab), `augmented` (a variation of a good human grasp that passed the robot's physics checks), or `robot` (one of the robot's own attempts). The robot learns from `human` and `augmented` records only.
+Positions are in meters and rotations are quaternions written as [x, y, z, w]. The grasp is expressed in the item's frame, using its position and rotation but not its scale. `record_id` is a unique id set once when the record is created. `source` is `human` (a player's grab), `augmented` (a variation of a good human grasp that passed the robot's physics checks), or `robot` (one of the robot's own attempts). The robot learns from `human` and `augmented` records only.
 
 Before collecting real data on the headset, move any `grasps.jsonl` recorded in the Meta XR Simulator out of the folder. Simulated pinches are not realistic and would pull the robot toward poor grasps.
 
@@ -95,8 +96,8 @@ Unity never connects to MongoDB directly. The MongoDB connection string would ha
 
 | File | Role today | What changes for the server |
 |---|---|---|
-| `Assets/Scripts/GraspRecord.cs` | Defines the JSON record (see Grasp data above) and helpers that create human, robot, and augmented records | Add a unique `record_id` (a GUID string) set when a record is created, so the server can ignore duplicates when an upload is retried |
-| `Assets/Scripts/GraspDataset.cs` | Keeps all records in memory, appends each one to `grasps.jsonl`, and raises `RecordAdded` for every new record | Nothing, apart from optionally merging records downloaded from the server |
+| `Assets/Scripts/GraspRecord.cs` | Defines the JSON record (see Grasp data above) and helpers that create human, robot, and augmented records. Each record gets a unique `record_id` when it is created | Nothing. Upload the record as is; a retried upload carries the same `record_id`, so the server can skip duplicates |
+| `Assets/Scripts/GraspDataset.cs` | Keeps all records in memory, appends each one to `grasps.jsonl`, and raises `RecordAdded` for every new record. On load, it gives older records without a `record_id` one and saves the file once | Nothing, apart from optionally merging records downloaded from the server (skip any `record_id` already present) |
 | `Assets/Scripts/DataUploader.cs` | Does not exist yet | New script: listens to `GraspDataset.RecordAdded`, adds each record to a local pending queue file, and sends batches in the background with `UnityWebRequest`. On failure it keeps the queue and retries later. The game must never wait on it |
 | `GraspRecorder.cs`, `RobotGripper.cs`, `GraspAugmenter.cs` | Create the `human`, `robot`, and `augmented` records | Nothing |
 

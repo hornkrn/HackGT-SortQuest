@@ -17,6 +17,8 @@ namespace SortQuest
         public const string SourceRobot = "robot";
         public const string NoBin = "none";
 
+        /// <summary>Unique id, set once when the record is created, so a server can ignore duplicate uploads.</summary>
+        public string record_id;
         public string session_id;
         public string player;
         public string timestamp;
@@ -37,6 +39,7 @@ namespace SortQuest
             Transform itemTransform = item.transform;
             var record = new GraspRecord
             {
+                record_id = NewId(),
                 session_id = dataset.SessionId,
                 player = source == SourceRobot ? "robot" : dataset.PlayerId,
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
@@ -61,6 +64,7 @@ namespace SortQuest
         {
             var record = new GraspRecord
             {
+                record_id = NewId(),
                 session_id = original.session_id,
                 player = original.player,
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
@@ -80,6 +84,12 @@ namespace SortQuest
             record.grasp.RotLocal = localGrasp.Rotation;
             record.grasp.width_m = GraspMath.Round(localGrasp.Width);
             return record;
+        }
+
+        /// <summary>A new unique record id (32 hex characters).</summary>
+        public static string NewId()
+        {
+            return Guid.NewGuid().ToString("N");
         }
 
         public GripperGrasp LocalGrasp => new GripperGrasp

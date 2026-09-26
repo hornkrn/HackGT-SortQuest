@@ -76,6 +76,7 @@ namespace SortQuest
                 return;
             }
             int skipped = 0;
+            int missingIds = 0;
             try
             {
                 foreach (string line in File.ReadAllLines(FilePath))
@@ -86,7 +87,13 @@ namespace SortQuest
                     }
                     try
                     {
-                        records.Add(JsonUtility.FromJson<GraspRecord>(line));
+                        GraspRecord record = JsonUtility.FromJson<GraspRecord>(line);
+                        if (string.IsNullOrEmpty(record.record_id))
+                        {
+                            record.record_id = GraspRecord.NewId();
+                            missingIds++;
+                        }
+                        records.Add(record);
                     }
                     catch (Exception)
                     {
@@ -100,6 +107,30 @@ namespace SortQuest
             }
             Debug.Log($"[SortQuest] Loaded {records.Count} saved grasps from {FilePath}" +
                       (skipped > 0 ? $" (skipped {skipped} bad lines)" : ""));
+
+            // Records saved before record_id existed get one now, written back once so the ids stay stable.
+            if (missingIds > 0)
+            {
+                RewriteFile();
+                Debug.Log($"[SortQuest] Gave {missingIds} older grasp records a record_id.");
+            }
+        }
+
+        private void RewriteFile()
+        {
+            try
+            {
+                var lines = new List<string>(records.Count);
+                foreach (GraspRecord record in records)
+                {
+                    lines.Add(JsonUtility.ToJson(record));
+                }
+                File.WriteAllLines(FilePath, lines);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[SortQuest] Couldn't update {FilePath}: {e.Message}");
+            }
         }
     }
 }
