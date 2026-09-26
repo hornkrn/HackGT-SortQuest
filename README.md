@@ -30,6 +30,7 @@ Robots learn to grasp objects from examples, and good examples are slow and expe
 | 4 | Game flow: intro, human round, training, robot round, teach me (with a robot retry), results | Done |
 | 5a | Learning visuals (accuracy chart, confidence bars, ghost grippers, grab dots) and simulation checked grasp augmentation | Done |
 | 5b | Upload grasps to a FastAPI and MongoDB Atlas server (see Developer notes) | Planned |
+| 6 | Robot camera that saves color, depth, and mask images with each grasp; industrial style gripper; display arm with a real reach limit | Done |
 
 The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a sign listing what goes in it, and the item in the player's hand shows its name.
 
@@ -48,7 +49,7 @@ The six starting items are an aluminum can, a plastic bottle, a cardboard box, c
    * **Meta Quest Link:** a Quest headset connected to the PC by USB cable or Air Link.
    * **Meta XR Simulator:** no headset needed. Turn on its runtime toggle, press Play, then set both inputs to Hand. Released items drop straight down in the simulator because its hands swing with the view.
 
-To test in a scene of your own without editing the main scene, create and save a new scene, then run the **SortQuest** menu items in order: **Build Milestone 1 Scene**, **Add Grasp Recording (Milestone 2)**, **Add Robot Gripper (Milestone 3)**, **Add Game Manager (Milestone 4)**, and **Add Learning Visuals and Augmenter (Milestone 5)**. Each is safe to run more than once.
+To test in a scene of your own without editing the main scene, create and save a new scene, then run the **SortQuest** menu items in order: **Build Milestone 1 Scene**, **Add Grasp Recording (Milestone 2)**, **Add Robot Gripper (Milestone 3)**, **Add Game Manager (Milestone 4)**, **Add Learning Visuals and Augmenter (Milestone 5)**, and **Upgrade Robot (Camera, Gripper, Arm)**. Each is safe to run more than once.
 
 ## Grasp data
 
@@ -66,11 +67,22 @@ Grasps are saved locally as JSON Lines (one record per line) in `grasps.jsonl` u
   "grasp": { "pos_local": [0.001, 0.012, -0.003], "rot_local": [0, 0.707, 0, 0.707], "width_m": 0.016 },
   "item_pose_world": { "pos": [0.42, 0.95, 0.30], "rot": [0, 0, 0, 1] },
   "outcome": { "bin": "hazardous", "correct": true, "dropped": false, "hold_s": 1.6 },
-  "hand": "right"
+  "hand": "right",
+  "image": { "id": "4be07c1f93a24d6f8d0e2b7c5a1f3e90", "cam_pos": [0.2, 2.0, 0.6], "cam_rot": [0.7071, 0, 0, 0.7071], "fov_y_deg": 80, "rgb_size": 256, "depth_size": 128 }
 }
 ```
 
 Positions are in meters and rotations are quaternions written as [x, y, z, w]. The grasp is expressed in the item's frame, using its position and rotation but not its scale. `record_id` is a unique id set once when the record is created. `source` is `human` (a player's grab), `augmented` (a variation of a good human grasp that passed the robot's physics checks), or `robot` (one of the robot's own attempts). The robot learns from `human` and `augmented` records only.
+
+`image` links the grasp to what an overhead **robot camera** saw at that moment, which is the training format grasp detection models use (what the camera saw, the grasp, and whether it worked). The images are saved next to `grasps.jsonl` in an `images` folder, named by the image id:
+
+| File | Contents |
+|---|---|
+| `{id}_rgb.png` | 256 x 256 color view, including the player's hand if it is in view |
+| `{id}_depth.exr` | 128 x 128 depth in meters along the camera's view axis (0 means nothing was hit) |
+| `{id}_mask.png` | 128 x 128 labels: 0 nothing, 85 belt and scene, 170 the grasped item, 255 other trash |
+
+Depth and mask come from physics raycasts against the scene, so they show the trash and belt but never hands. The camera's position, rotation, and field of view are stored in each record, so grasps can be projected into the images. The `id` is empty when the item was not in the camera's view. Augmented records reuse their original's image, since the scene is the same. Images are taken when a grab or robot attempt starts, so an attempt that is interrupted (for example by stopping Play) can leave a few image files that no record points to; they are safe to ignore or delete.
 
 Before collecting real data on the headset, move any `grasps.jsonl` recorded in the Meta XR Simulator out of the folder. Simulated pinches are not realistic and would pull the robot toward poor grasps.
 
@@ -100,6 +112,7 @@ Unity never connects to MongoDB directly. The MongoDB connection string would ha
 | `Assets/Scripts/GraspDataset.cs` | Keeps all records in memory, appends each one to `grasps.jsonl`, and raises `RecordAdded` for every new record. On load, it gives older records without a `record_id` one and saves the file once | Nothing, apart from optionally merging records downloaded from the server (skip any `record_id` already present) |
 | `Assets/Scripts/DataUploader.cs` | Does not exist yet | New script: listens to `GraspDataset.RecordAdded`, adds each record to a local pending queue file, and sends batches in the background with `UnityWebRequest`. On failure it keeps the queue and retries later. The game must never wait on it |
 | `GraspRecorder.cs`, `RobotGripper.cs`, `GraspAugmenter.cs` | Create the `human`, `robot`, and `augmented` records | Nothing |
+| `Assets/Scripts/RobotCamera.cs` | Saves the color, depth, and mask images for each grasp into `images/` and fills in the record's `image` section | The uploader can send image files separately (see `PUT /images/{image_id}/{kind}` below), or skip them at first. Records are useful without them |
 
 Records are created in three places, but all of them pass through `GraspDataset.Add`, so the uploader only needs to hook that one event.
 
@@ -128,11 +141,123 @@ flowchart LR
 | `POST /grasps` | `{"records": [GraspRecord, ...]}`, up to about 100 per batch | `{"inserted": 12, "duplicates": 0}` | Store new records from a headset |
 | `GET /grasps?item_type=battery_aa&good=true&source=human,augmented&limit=500` | query parameters | `{"records": [GraspRecord, ...]}` | Optional: let a headset learn from every player's good grasps, not just its own |
 | `GET /stats` | nothing | counts per item type and source, good grasp counts, robot success rate over time | A live stats page for judges, and data for charts |
+| `PUT /images/{image_id}/{kind}` | the raw file bytes, where `kind` is `rgb`, `depth`, or `mask` | `{"stored": true}` | Optional: store the camera images, for example in GridFS or object storage, linked by `image.id` |
+
+### MongoDB schema
+
+**Collection `grasps`.** One document per record, stored exactly as the game sends it, with `_id` set to the record's `record_id` and two dates added by the server.
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | string | Same value as `record_id`. Using it as the key makes MongoDB reject duplicate uploads by itself |
+| `record_id` | string | 32 hex characters |
+| `session_id` | string | For example `s-20260926-0412` |
+| `player` | string | `anon-3f2a` style id, or `robot` |
+| `timestamp` | string | ISO 8601 UTC time from the game |
+| `created_at` | date | Added by the server: `timestamp` parsed into a date, for time range queries |
+| `received_at` | date | Added by the server: when the upload arrived |
+| `source` | string | `human`, `augmented`, or `robot` |
+| `item_type` | string | `aluminum_can`, `plastic_bottle`, `cardboard_box`, `crumpled_paper`, `battery_aa`, `power_bank` |
+| `correct_bin` | string | `metal`, `plastic`, `paper`, `hazardous` |
+| `hand` | string | `left`, `right`, or `gripper` (robot) |
+| `grasp.pos_local` | number[3] | Grasp center in meters, in the item's frame |
+| `grasp.rot_local` | number[4] | Gripper rotation as a quaternion [x, y, z, w], in the item's frame |
+| `grasp.width_m` | number | Finger opening in meters |
+| `item_pose_world.pos` | number[3] | Item position in the scene when the grasp started |
+| `item_pose_world.rot` | number[4] | Item rotation in the scene |
+| `outcome.bin` | string | A bin id, or `none` if the item did not land in a bin |
+| `outcome.correct` | bool | Landed in the correct bin |
+| `outcome.dropped` | bool | Touched something other than a bin after release |
+| `outcome.hold_s` | number | Seconds the item was held |
+| `image.id` | string | Robot camera image id, or empty if there is no image |
+| `image.cam_pos` | number[3] | Camera position |
+| `image.cam_rot` | number[4] | Camera rotation as a quaternion |
+| `image.fov_y_deg` | number | Camera vertical field of view |
+| `image.rgb_size` | int | Color image width and height in pixels |
+| `image.depth_size` | int | Depth and mask width and height in pixels |
+
+A good grasp is `outcome.correct == true` and `outcome.dropped == false`. The robot learns from good `human` and `augmented` records; `robot` records are the robot's own attempts, kept for statistics.
+
+Validator and indexes (run once in `mongosh`, or apply the same settings through PyMongo):
+
+```js
+db.createCollection("grasps", {
+  validator: { $jsonSchema: {
+    bsonType: "object",
+    required: ["_id", "record_id", "session_id", "player", "timestamp", "source",
+               "item_type", "correct_bin", "hand", "grasp", "item_pose_world", "outcome"],
+    properties: {
+      _id:         { bsonType: "string", pattern: "^[0-9a-f]{32}$" },
+      record_id:   { bsonType: "string", pattern: "^[0-9a-f]{32}$" },
+      session_id:  { bsonType: "string" },
+      player:      { bsonType: "string" },
+      timestamp:   { bsonType: "string" },
+      created_at:  { bsonType: "date" },
+      received_at: { bsonType: "date" },
+      source:      { enum: ["human", "augmented", "robot"] },
+      item_type:   { enum: ["aluminum_can", "plastic_bottle", "cardboard_box",
+                            "crumpled_paper", "battery_aa", "power_bank"] },
+      correct_bin: { enum: ["metal", "plastic", "paper", "hazardous"] },
+      hand:        { enum: ["left", "right", "gripper"] },
+      grasp: {
+        bsonType: "object", required: ["pos_local", "rot_local", "width_m"],
+        properties: {
+          pos_local: { bsonType: "array", minItems: 3, maxItems: 3, items: { bsonType: "number" } },
+          rot_local: { bsonType: "array", minItems: 4, maxItems: 4, items: { bsonType: "number" } },
+          width_m:   { bsonType: "number" }
+        }
+      },
+      item_pose_world: {
+        bsonType: "object", required: ["pos", "rot"],
+        properties: {
+          pos: { bsonType: "array", minItems: 3, maxItems: 3, items: { bsonType: "number" } },
+          rot: { bsonType: "array", minItems: 4, maxItems: 4, items: { bsonType: "number" } }
+        }
+      },
+      outcome: {
+        bsonType: "object", required: ["bin", "correct", "dropped", "hold_s"],
+        properties: {
+          bin:     { enum: ["metal", "plastic", "paper", "hazardous", "none"] },
+          correct: { bsonType: "bool" },
+          dropped: { bsonType: "bool" },
+          hold_s:  { bsonType: "number" }
+        }
+      },
+      image: {
+        bsonType: "object",
+        properties: {
+          id:         { bsonType: "string" },
+          cam_pos:    { bsonType: "array", minItems: 3, maxItems: 3, items: { bsonType: "number" } },
+          cam_rot:    { bsonType: "array", minItems: 4, maxItems: 4, items: { bsonType: "number" } },
+          fov_y_deg:  { bsonType: "number" },
+          rgb_size:   { bsonType: "int" },
+          depth_size: { bsonType: "int" }
+        }
+      }
+    }
+  } }
+});
+
+db.grasps.createIndex({ item_type: 1, source: 1, "outcome.correct": 1, "outcome.dropped": 1 });
+db.grasps.createIndex({ session_id: 1 });
+db.grasps.createIndex({ created_at: 1 });
+```
+
+When storing a batch, insert with `ordered=False` so one duplicate does not stop the rest, and count duplicate key errors (code 11000) as `duplicates` in the response instead of failing the request.
+
+**Images (optional): GridFS bucket `images`.** GridFS is MongoDB's built in way to store files, so no separate file storage is needed. Store each image file with the name `{image_id}_{kind}` and this metadata, and index `metadata.image_id`:
+
+| Metadata field | Type | Notes |
+|---|---|---|
+| `image_id` | string | Matches `grasps.image.id` |
+| `kind` | string | `rgb`, `depth`, or `mask` |
+| `content_type` | string | `image/png` for rgb and mask, `image/x-exr` for depth |
+
+Several records can share one image (augmented records reuse their original's image), so link images by `image.id`, not by record.
 
 Notes for the server:
 
-* **Storage:** one `grasps` collection, one document per record, stored exactly as the game sends it plus a server `received_at` timestamp. Useful indexes are a unique index on `record_id`, and a compound index on `item_type`, `source`, `outcome.correct`, and `outcome.dropped`.
-* **Validation:** a Pydantic model can mirror the record. `source` must be `human`, `augmented`, or `robot`; `pos_local` and `pos` have 3 numbers; `rot_local` and `rot` have 4. A good grasp is `outcome.correct == true` and `outcome.dropped == false`.
+* **Storage and validation:** see the MongoDB schema above. A Pydantic model that mirrors the same fields lets FastAPI reject bad records before they reach the database.
 * **Security:** there are no user accounts. A shared API key header can stop casual misuse, but it ships in the app, so treat it as a speed bump, not a secret. Validate every record and cap batch sizes.
 * **Reaching the server from the Quest:** the headset needs a public HTTPS address (for example a hosted service or a tunnel). Android blocks plain `http://` by default, so HTTPS avoids extra Unity settings.
 * **Game rule:** uploads are best effort. If the server is down, records stay in the local queue and in `grasps.jsonl`, and gameplay is unaffected.

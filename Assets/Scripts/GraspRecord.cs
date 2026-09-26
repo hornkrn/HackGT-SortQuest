@@ -30,6 +30,9 @@ namespace SortQuest
         public OutcomeData outcome = new OutcomeData();
         public string hand;
 
+        /// <summary>What the robot camera saw at the moment of the grasp. Empty id if no image was taken.</summary>
+        public ImageData image = new ImageData();
+
         /// <summary>Good data: landed in the correct bin without being dropped.</summary>
         public bool IsGood => outcome != null && outcome.correct && !outcome.dropped;
 
@@ -73,6 +76,7 @@ namespace SortQuest
                 correct_bin = original.correct_bin,
                 hand = original.hand,
                 item_pose_world = original.item_pose_world,
+                image = original.image, // Same scene and item pose, so the original's images apply.
                 outcome = new OutcomeData
                 {
                     bin = original.outcome.bin,
@@ -125,6 +129,22 @@ namespace SortQuest
     {
         public double[] pos = new double[3];
         public double[] rot = { 0, 0, 0, 1 };
+    }
+
+    /// <summary>
+    /// Robot camera images for a grasp, saved as files named by id in persistentDataPath/images:
+    /// {id}_rgb.png (color), {id}_depth.exr (depth in meters along the camera's view axis, 0 = nothing),
+    /// and {id}_mask.png (0 nothing, 85 scene, 170 the grasped item, 255 other trash).
+    /// </summary>
+    [Serializable]
+    public class ImageData
+    {
+        public string id = "";
+        public double[] cam_pos = new double[3];
+        public double[] cam_rot = { 0, 0, 0, 1 };
+        public double fov_y_deg;
+        public int rgb_size;
+        public int depth_size;
     }
 
     [Serializable]

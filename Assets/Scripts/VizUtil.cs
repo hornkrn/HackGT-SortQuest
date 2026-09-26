@@ -12,16 +12,32 @@ namespace SortQuest
     public static class VizUtil
     {
         private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static Mesh cubeMesh;
         private static Mesh sphereMesh;
+        private static Mesh cylinderMesh;
+        private static Mesh quadMesh;
 
         public static Mesh CubeMesh => cubeMesh != null ? cubeMesh : cubeMesh = PrimitiveMesh(PrimitiveType.Cube);
         public static Mesh SphereMesh => sphereMesh != null ? sphereMesh : sphereMesh = PrimitiveMesh(PrimitiveType.Sphere);
+        public static Mesh CylinderMesh => cylinderMesh != null ? cylinderMesh : cylinderMesh = PrimitiveMesh(PrimitiveType.Cylinder);
+        public static Mesh QuadMesh => quadMesh != null ? quadMesh : quadMesh = PrimitiveMesh(PrimitiveType.Quad);
 
         /// <summary>Used only if no material was assigned in the Inspector.</summary>
         public static Material FallbackMaterial()
         {
             return new Material(Shader.Find("Sprites/Default"));
+        }
+
+        /// <summary>A shape using the material's own color (for lit materials like the robot's metal and plastic).</summary>
+        public static MeshRenderer CreateShape(string name, Transform parent, Mesh mesh, Material material)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            MeshRenderer meshRenderer = go.AddComponent<MeshRenderer>();
+            meshRenderer.sharedMaterial = material;
+            return meshRenderer;
         }
 
         public static MeshRenderer CreateShape(string name, Transform parent, Mesh mesh, Material material, Color color)
@@ -43,6 +59,23 @@ namespace SortQuest
             target.GetPropertyBlock(block);
             block.SetColor(ColorId, color);
             target.SetPropertyBlock(block);
+        }
+
+        public static void SetTexture(Renderer target, Texture texture)
+        {
+            var block = new MaterialPropertyBlock();
+            target.GetPropertyBlock(block);
+            block.SetTexture(MainTexId, texture);
+            target.SetPropertyBlock(block);
+        }
+
+        /// <summary>Places a cylinder (Unity's is 2 units tall along Y) so it runs from a to b.</summary>
+        public static void PlaceBetween(Transform cylinder, Vector3 a, Vector3 b, float radius)
+        {
+            Vector3 span = b - a;
+            cylinder.position = (a + b) * 0.5f;
+            cylinder.rotation = span.sqrMagnitude > 1e-8f ? Quaternion.FromToRotation(Vector3.up, span) : Quaternion.identity;
+            cylinder.localScale = new Vector3(radius * 2f, span.magnitude * 0.5f, radius * 2f);
         }
 
         public static TextMeshPro CreateText(string name, Transform parent, Vector3 localPosition, Vector2 size,

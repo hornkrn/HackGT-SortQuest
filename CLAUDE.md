@@ -64,8 +64,10 @@ Pitch: "Every time you play, a recycling robot gets better at its job."
   "grasp": { "pos_local": [0.001, 0.012, -0.003], "rot_local": [0, 0.707, 0, 0.707], "width_m": 0.016 },
   "item_pose_world": { "pos": [0.42, 0.95, 0.30], "rot": [0, 0, 0, 1] },
   "outcome": { "bin": "hazardous", "correct": true, "dropped": false, "hold_s": 1.6 },
-  "hand": "right"
+  "hand": "right",
+  "image": { "id": "4be07c1f93a24d6f8d0e2b7c5a1f3e90", "cam_pos": [0.2, 2.0, 0.6], "cam_rot": [0.7071, 0, 0, 0.7071], "fov_y_deg": 80, "rgb_size": 256, "depth_size": 128 }
 }
 ```
 `source` is one of `human`, `augmented`, or `robot`.
 `record_id` is a GUID (32 hex characters) set once when the record is created; the server uses it to ignore duplicate uploads.
+`image` describes the overhead robot camera's view at the moment of the grasp (empty `id` if the item wasn't in view). The files live in `persistentDataPath/images/`: `{id}_rgb.png` (color), `{id}_depth.exr` (float depth in meters along the camera axis, 0 = nothing), and `{id}_mask.png` (0 nothing, 85 scene, 170 grasped item, 255 other trash). Augmented records reuse their original's image.

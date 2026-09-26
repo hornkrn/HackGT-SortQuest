@@ -19,6 +19,9 @@ namespace SortQuest
         [Tooltip("Found automatically if left empty. New items from it are recorded.")]
         [SerializeField] private TrashSpawner spawner;
 
+        [Tooltip("Optional overhead camera that saves what the robot would see at each grab. Found automatically if left empty.")]
+        [SerializeField] private RobotCamera robotCamera;
+
         [SerializeField] private bool logRecords = true;
 
         [Header("Debug gizmo (Scene view)")]
@@ -41,6 +44,10 @@ namespace SortQuest
             if (spawner == null)
             {
                 spawner = FindAnyObjectByType<TrashSpawner>();
+            }
+            if (robotCamera == null)
+            {
+                robotCamera = FindAnyObjectByType<RobotCamera>();
             }
             if (dataset == null)
             {
@@ -113,7 +120,13 @@ namespace SortQuest
 
             GripperGrasp local = HandGripperPose.ToLocal(worldGrasp, item.transform);
             string handName = hand.Handedness == Handedness.Left ? "left" : "right";
-            pending[item] = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName);
+            GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName);
+            ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
+            if (image != null)
+            {
+                record.image = image;
+            }
+            pending[item] = record;
             GraspCaptured?.Invoke(item, local);
         }
 

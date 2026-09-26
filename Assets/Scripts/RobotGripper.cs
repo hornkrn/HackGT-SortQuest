@@ -38,6 +38,15 @@ namespace SortQuest
         [Tooltip("Optional text showing the robot's accuracy and last attempt.")]
         [SerializeField] private TMP_Text statusText;
 
+        [Tooltip("Optional detailed gripper model. Found on this object if left empty.")]
+        [SerializeField] private GripperVisual visual;
+
+        [Tooltip("Optional arm. Grasps it can't reach count as misses. Found automatically if left empty.")]
+        [SerializeField] private RobotArmDisplay arm;
+
+        [Tooltip("Optional overhead camera that saves what the robot saw for each attempt. Found automatically if left empty.")]
+        [SerializeField] private RobotCamera robotCamera;
+
         [Header("Behavior")]
         [SerializeField] private bool runOnStart = true;
 
@@ -104,6 +113,9 @@ namespace SortQuest
             if (dataset == null) dataset = FindAnyObjectByType<GraspDataset>();
             if (belt == null) belt = FindAnyObjectByType<ConveyorBelt>();
             if (spawner == null) spawner = FindAnyObjectByType<TrashSpawner>();
+            if (visual == null) visual = GetComponent<GripperVisual>();
+            if (arm == null) arm = FindAnyObjectByType<RobotArmDisplay>();
+            if (robotCamera == null) robotCamera = FindAnyObjectByType<RobotCamera>();
             if (policy == null || belt == null || spawner == null)
             {
                 Debug.LogError("[SortQuest] RobotGripper needs a GraspPolicy, ConveyorBelt, and TrashSpawner.", this);
@@ -146,6 +158,7 @@ namespace SortQuest
             heldJoint = null;
             heldItem = null;
             OpenFingers();
+            if (visual != null) visual.SetBusy(false);
             runRoutine = StartCoroutine(Run());
         }
 
@@ -160,7 +173,14 @@ namespace SortQuest
 
         private void Update()
         {
-            ApplyFingerLayout();
+            if (visual != null)
+            {
+                visual.Apply(leftOffset, rightOffset);
+            }
+            else
+            {
+                ApplyFingerLayout();
+            }
         }
 
         private IEnumerator Run()
@@ -174,7 +194,9 @@ namespace SortQuest
                     yield return waitForFixedUpdate;
                     continue;
                 }
+                if (visual != null) visual.SetBusy(true);
                 yield return StartCoroutine(TrySort(target));
+                if (visual != null) visual.SetBusy(false);
             }
         }
 
@@ -205,7 +227,18 @@ namespace SortQuest
             attempted.Add(item);
             GraspChoice choice = policy.ChooseGrasp(item);
             GraspPlanned?.Invoke(item, choice);
+            ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
             OpenFingers();
+
+            // A real arm this size couldn't put the gripper there, so it's a miss without moving.
+            GripperGrasp planned = WorldGrasp(choice, item);
+            GripperGrasp lineUp = planned;
+            lineUp.Position -= planned.Approach * approachDistance;
+            if (arm != null && (!arm.CanReach(planned) || !arm.CanReach(lineUp)))
+            {
+                Record(item, choice, false, "out of the arm's reach", image);
+                yield break;
+            }
 
             // 1. Line up in front of the grasp, then 2. move in along the approach direction.
             //    Both follow the item as it rides the belt.
@@ -254,7 +287,7 @@ namespace SortQuest
             }
 
             bool success = !blocked && leftTouch && rightTouch;
-            Record(item, choice, success, blocked);
+            Record(item, choice, success, blocked ? "fingers hit something" : "fingers didn't both touch", image);
             if (!success)
             {
                 OpenFingers();
@@ -293,7 +326,7 @@ namespace SortQuest
             yield return new WaitForSeconds(0.3f);
         }
 
-        private void Record(TrashItem item, GraspChoice choice, bool success, bool blocked)
+        private void Record(TrashItem item, GraspChoice choice, bool success, string missReason, ImageData image)
         {
             Attempts++;
             if (success)
@@ -304,7 +337,11 @@ namespace SortQuest
             string how = choice.FromData
                 ? $"learned grasp ({choice.Support} of {choice.GoodCount} agree, {choice.Confidence * 100f:F0}% sure)"
                 : "no data, random guess";
-            string result = success ? "success" : blocked ? "missed (fingers hit something)" : "missed (fingers didn't both touch)";
+            string result = success ? "success" : $"missed ({missReason})";
+            if (visual != null)
+            {
+                visual.Flash(success);
+            }
             lastResult = $"{TrashTypes.DisplayName(item.ItemType)}: {how}, {result}";
             Debug.Log($"[SortQuest] Robot {lastResult}. Accuracy {Successes}/{Attempts}");
             UpdateStatus();
@@ -316,6 +353,10 @@ namespace SortQuest
                 GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceRobot, item, actual, "gripper");
                 record.outcome.bin = success ? TrashTypes.BinId(item.CorrectBin) : GraspRecord.NoBin;
                 record.outcome.correct = success;
+                if (image != null)
+                {
+                    record.image = image;
+                }
                 dataset.Add(record);
             }
 

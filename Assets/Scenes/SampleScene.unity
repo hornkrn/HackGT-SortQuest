@@ -344,6 +344,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GraspRecorder
   dataset: {fileID: 39390844}
   spawner: {fileID: 193552011}
+  robotCamera: {fileID: 1736045744}
   logRecords: 1
   drawLastGrasp: 1
 --- !u!114 &39390844
@@ -977,6 +978,58 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &237168433
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 237168435}
+  - component: {fileID: 237168434}
+  m_Layer: 0
+  m_Name: RobotArm
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &237168434
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 237168433}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f55c9f982697a94090826eed4510793, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.RobotArmDisplay
+  gripper: {fileID: 2006899606}
+  mountOffset: 0.185
+  shoulderHeight: 1
+  upperArmLength: 0.85
+  forearmLength: 0.8
+  bodyMaterial: {fileID: 2100000, guid: 29608f2fdee7940409423faaa2ca1535, type: 2}
+  accentMaterial: {fileID: 2100000, guid: bf4525413b01e504295dc762914ecae2, type: 2}
+  metalMaterial: {fileID: 2100000, guid: 71a42db31e458d14c99ab426022fd167, type: 2}
+--- !u!4 &237168435
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 237168433}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.3, y: 0, z: 1}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3565,6 +3618,66 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1731168239}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &923126199
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 923126202}
+  - component: {fileID: 923126201}
+  - component: {fileID: 923126200}
+  m_Layer: 0
+  m_Name: RobotVisionScreen
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &923126200
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 923126199}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f28e7e83ae282d147beed89169e4f3a1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.Billboard
+--- !u!114 &923126201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 923126199}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0499e7eb2c42fc14faf26d0766e331e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.RobotVisionScreen
+  robotCamera: {fileID: 1736045744}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  size: 0.45
+--- !u!4 &923126202
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 923126199}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.75, y: 1.75, z: 1.45}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &989495392
@@ -6427,6 +6540,111 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 1.7}
   m_SizeDelta: {x: 3, y: 0.6}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &1736045743
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1736045746}
+  - component: {fileID: 1736045745}
+  - component: {fileID: 1736045744}
+  m_Layer: 0
+  m_Name: RobotCamera
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1736045744
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1736045743}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cacb716465c920241b3c3ead1ab75929, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.RobotCamera
+  colorSize: 256
+  depthSize: 128
+  maxDepth: 5
+  depthLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  saveImages: 1
+  housingMaterial: {fileID: 2100000, guid: 29608f2fdee7940409423faaa2ca1535, type: 2}
+  lightMaterial: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+--- !u!20 &1736045745
+Camera:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1736045743}
+  m_Enabled: 0
+  serializedVersion: 2
+  m_ClearFlags: 1
+  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_projectionMatrixMode: 1
+  m_GateFitMode: 2
+  m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
+  m_SensorSize: {x: 36, y: 24}
+  m_LensShift: {x: 0, y: 0}
+  m_NormalizedViewPortRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  near clip plane: 0.2
+  far clip plane: 10
+  field of view: 80
+  orthographic: 0
+  orthographic size: 5
+  m_Depth: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingPath: -1
+  m_TargetTexture: {fileID: 0}
+  m_TargetDisplay: 0
+  m_TargetEye: 0
+  m_HDR: 1
+  m_AllowMSAA: 1
+  m_AllowDynamicResolution: 0
+  m_ForceIntoRT: 0
+  m_OcclusionCulling: 1
+  m_StereoConvergence: 10
+  m_StereoSeparation: 0.022
+--- !u!4 &1736045746
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1736045743}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0.2, y: 2, z: 0.6}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1738201053
 GameObject:
   m_ObjectHideFlags: 0
@@ -7326,6 +7544,7 @@ GameObject:
   - component: {fileID: 2006899605}
   - component: {fileID: 2006899604}
   - component: {fileID: 2006899603}
+  - component: {fileID: 2006899607}
   m_Layer: 0
   m_Name: RobotGripper
   m_TagString: Untagged
@@ -7353,6 +7572,9 @@ MonoBehaviour:
   fingerRight: {fileID: 1594029037}
   palm: {fileID: 283229682}
   statusText: {fileID: 1625599085}
+  visual: {fileID: 2006899607}
+  arm: {fileID: 237168434}
+  robotCamera: {fileID: 1736045744}
   runOnStart: 1
   pickZoneStart: 0.6
   moveSpeed: 0.8
@@ -7431,6 +7653,32 @@ Transform:
   - {fileID: 1594029037}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2006899607
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2006899602}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 217db4eae4076ba4a88283d10317332f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GripperVisual
+  robot: {fileID: 0}
+  bodyMaterial: {fileID: 2100000, guid: 29608f2fdee7940409423faaa2ca1535, type: 2}
+  metalMaterial: {fileID: 2100000, guid: 71a42db31e458d14c99ab426022fd167, type: 2}
+  padMaterial: {fileID: 2100000, guid: b31a4181d5ab827419949e87b502c876, type: 2}
+  accentMaterial: {fileID: 2100000, guid: bf4525413b01e504295dc762914ecae2, type: 2}
+  lightMaterial: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  hideAtRuntime:
+  - {fileID: 283229683}
+  - {fileID: 448830357}
+  - {fileID: 1594029038}
+  idleColor: {r: 0.2, g: 0.8, b: 1, a: 1}
+  busyColor: {r: 1, g: 0.7, b: 0.1, a: 1}
+  successColor: {r: 0.2, g: 1, b: 0.3, a: 1}
+  failColor: {r: 1, g: 0.15, b: 0.1, a: 1}
 --- !u!1 &2034845991
 GameObject:
   m_ObjectHideFlags: 0
@@ -7524,3 +7772,6 @@ SceneRoots:
   - {fileID: 544321501}
   - {fileID: 573722337}
   - {fileID: 1815988802}
+  - {fileID: 237168435}
+  - {fileID: 1736045746}
+  - {fileID: 923126202}

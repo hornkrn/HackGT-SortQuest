@@ -12,7 +12,8 @@ namespace SortQuest
 {
     /// <summary>
     /// Menu items that build the milestone 1 scene objects and trash item prefabs, add grasp recording (milestone 2),
-    /// add the robot gripper (milestone 3), add the game manager (milestone 4), and add the learning visuals (milestone 5).
+    /// add the robot gripper (milestone 3), add the game manager (milestone 4), add the learning visuals (milestone 5),
+    /// and upgrade the robot with a camera, a detailed gripper, and an arm.
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -297,13 +298,7 @@ namespace SortQuest
             }
 
             // One see-through material for every visual; each shape sets its own color.
-            string materialPath = $"{MaterialFolder}/Mat_Viz.mat";
-            Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-            if (material == null)
-            {
-                material = new Material(Shader.Find("Sprites/Default"));
-                AssetDatabase.CreateAsset(material, materialPath);
-            }
+            Material material = GetOrCreateVizMaterial();
 
             GameObject chart = GetOrCreate("RobotAccuracyChart", null, null, out bool chartCreated);
             if (chartCreated) chart.transform.position = new Vector3(1.55f, 1.35f, 1.25f);
@@ -331,6 +326,127 @@ namespace SortQuest
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
             Debug.Log($"[SortQuest] Learning visuals and grasp augmenter added and scene saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Upgrade Robot (Camera, Gripper, Arm)")]
+        public static void UpgradeRobot()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            RobotGripper robot = Object.FindAnyObjectByType<RobotGripper>();
+            if (robot == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Run the Milestone 1 to 5 menu items first.", "OK");
+                return;
+            }
+
+            Material viz = GetOrCreateVizMaterial();
+            Material body = GetOrCreateLitMaterial("Mat_RobotBody", new Color(0.16f, 0.17f, 0.19f), 0.5f, 0.55f);
+            Material metal = GetOrCreateLitMaterial("Mat_RobotMetal", new Color(0.72f, 0.74f, 0.77f), 0.85f, 0.7f);
+            Material rubber = GetOrCreateLitMaterial("Mat_RobotRubber", new Color(0.05f, 0.05f, 0.05f), 0f, 0.25f);
+            Material accent = GetOrCreateMaterial("Mat_Robot", new Color(1f, 0.55f, 0.1f));
+
+            // Detailed gripper model; the simple placeholder boxes are hidden at runtime.
+            GripperVisual visual = GetOrAdd<GripperVisual>(robot.gameObject, out _);
+            SetIfEmpty(visual, "bodyMaterial", body);
+            SetIfEmpty(visual, "metalMaterial", metal);
+            SetIfEmpty(visual, "padMaterial", rubber);
+            SetIfEmpty(visual, "accentMaterial", accent);
+            SetIfEmpty(visual, "lightMaterial", viz);
+            var placeholders = new System.Collections.Generic.List<Object>();
+            foreach (string part in new[] { "Palm", "FingerLeft", "FingerRight" })
+            {
+                Transform child = robot.transform.Find(part);
+                if (child != null && child.GetComponent<Renderer>() != null)
+                {
+                    placeholders.Add(child.GetComponent<Renderer>());
+                }
+            }
+            SetArrayIfEmpty(visual, "hideAtRuntime", placeholders.ToArray());
+            SetIfEmpty(robot, "visual", visual);
+
+            // Arm behind the belt, reaching over it to the bins.
+            GameObject armObject = GetOrCreate("RobotArm", null, null, out bool armCreated);
+            if (armCreated) armObject.transform.position = new Vector3(0.3f, 0f, 1.0f);
+            RobotArmDisplay arm = GetOrAdd<RobotArmDisplay>(armObject, out _);
+            SetIfEmpty(arm, "gripper", robot.transform);
+            SetIfEmpty(arm, "bodyMaterial", body);
+            SetIfEmpty(arm, "accentMaterial", accent);
+            SetIfEmpty(arm, "metalMaterial", metal);
+            SetIfEmpty(robot, "arm", arm);
+
+            // Overhead camera looking straight down at the belt. It renders only into its own texture
+            // (set up at runtime), never to the headset.
+            GameObject cameraObject = GetOrCreate("RobotCamera", null, null, out bool cameraCreated);
+            if (cameraCreated)
+            {
+                cameraObject.transform.SetPositionAndRotation(new Vector3(0.2f, 2.0f, 0.6f), Quaternion.Euler(90f, 0f, 0f));
+            }
+            Camera cam = GetOrAdd<Camera>(cameraObject, out bool cameraAdded);
+            if (cameraAdded)
+            {
+                cam.enabled = false;
+                cam.stereoTargetEye = StereoTargetEyeMask.None;
+                cam.fieldOfView = 80f;
+                cam.nearClipPlane = 0.2f;
+                cam.farClipPlane = 10f;
+            }
+            RobotCamera robotCamera = GetOrAdd<RobotCamera>(cameraObject, out _);
+            SetIfEmpty(robotCamera, "housingMaterial", body);
+            SetIfEmpty(robotCamera, "lightMaterial", viz);
+            SetIfEmpty(robot, "robotCamera", robotCamera);
+            GraspRecorder recorder = Object.FindAnyObjectByType<GraspRecorder>();
+            if (recorder != null)
+            {
+                SetIfEmpty(recorder, "robotCamera", robotCamera);
+            }
+
+            GameObject screen = GetOrCreate("RobotVisionScreen", null, null, out bool screenCreated);
+            if (screenCreated) screen.transform.position = new Vector3(-0.75f, 1.75f, 1.45f);
+            RobotVisionScreen vision = GetOrAdd<RobotVisionScreen>(screen, out _);
+            GetOrAdd<Billboard>(screen, out _);
+            SetIfEmpty(vision, "robotCamera", robotCamera);
+            SetIfEmpty(vision, "material", viz);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[SortQuest] Robot camera, gripper model, and arm added and scene saved ({scene.path}).");
+        }
+
+        private static Material GetOrCreateVizMaterial()
+        {
+            string path = $"{MaterialFolder}/Mat_Viz.mat";
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                material = new Material(Shader.Find("Sprites/Default"));
+                AssetDatabase.CreateAsset(material, path);
+            }
+            return material;
+        }
+
+        private static Material GetOrCreateLitMaterial(string name, Color color, float metallic, float smoothness)
+        {
+            string path = $"{MaterialFolder}/{name}.mat";
+            if (AssetDatabase.LoadAssetAtPath<Material>(path) == null)
+            {
+                Material created = GetOrCreateMaterial(name, color);
+                created.SetFloat("_Metallic", metallic);
+                created.SetFloat("_Smoothness", smoothness);
+                EditorUtility.SetDirty(created);
+                return created;
+            }
+            return AssetDatabase.LoadAssetAtPath<Material>(path);
         }
 
         private static void AddGhost(string name, GhostGripper.Source source, Color color, Material material)
