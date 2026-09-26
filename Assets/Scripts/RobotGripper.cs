@@ -7,13 +7,13 @@ using UnityEngine;
 namespace SortQuest
 {
     /// <summary>
-    /// A floating two-finger gripper (no arm) that sorts items near the end of the belt.
-    /// For each item it asks the GraspPolicy for a grasp, moves there while following the belt,
-    /// and closes. The grasp succeeds only if both fingers touch the item; the item is then held
-    /// with a FixedJoint and dropped into its correct bin. No friction-based grasping.
+    /// The robot's gripper, using whichever gripper is selected in the GripperCatalog. For each item it asks the
+    /// GraspPolicy for a grasp, moves there while following the belt, and grasps. A two-finger grasp succeeds only
+    /// if both fingers touch the item; a suction grasp succeeds only if the cup seals on a flat enough surface.
+    /// The item is then held with a FixedJoint and dropped into its correct bin. No friction-based grasping.
     ///
     /// Gripper frame: the root sits at the grasp point, +Z is the approach direction,
-    /// and the fingers close along X.
+    /// and two-finger grippers close along X.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class RobotGripper : MonoBehaviour
@@ -47,6 +47,9 @@ namespace SortQuest
         [Tooltip("Optional overhead camera that saves what the robot saw for each attempt. Found automatically if left empty.")]
         [SerializeField] private RobotCamera robotCamera;
 
+        [Tooltip("Selected gripper. Found automatically if left empty; without one, the shape below is used.")]
+        [SerializeField] private GripperCatalog catalog;
+
         [Header("Behavior")]
         [SerializeField] private bool runOnStart = true;
 
@@ -56,7 +59,7 @@ namespace SortQuest
         [SerializeField] private float moveSpeed = 0.8f;
         [SerializeField] private float turnSpeed = 360f;
 
-        [Tooltip("Distance before the grasp point where the gripper lines up before moving in.")]
+        [Tooltip("Used only without a GripperCatalog: distance before the grasp point where the gripper lines up.")]
         [SerializeField] private float approachDistance = 0.12f;
 
         [Tooltip("Finger closing speed, m/s per finger.")]
@@ -68,7 +71,7 @@ namespace SortQuest
         [Tooltip("Give up on a move after this many seconds.")]
         [SerializeField] private float stepTimeout = 4f;
 
-        [Header("Gripper shape")]
+        [Header("Gripper shape (used only without a GripperCatalog)")]
         [SerializeField] private GripperShape shape = new GripperShape();
 
         public event Action<Attempt> AttemptFinished;
@@ -86,8 +89,14 @@ namespace SortQuest
         public int Attempts { get; private set; }
         public int Successes { get; private set; }
         public float Accuracy => Attempts == 0 ? 0f : (float)Successes / Attempts;
-        public GripperShape Shape => shape;
-        public float ApproachDistance => approachDistance;
+        /// <summary>The gripper the robot is using now.</summary>
+        public GripperProfile Profile => catalog != null && catalog.Current != null ? catalog.Current : FallbackProfile;
+
+        // Other components can ask before this one's Awake has run, so build the fallback on first use.
+        private GripperProfile FallbackProfile =>
+            fallbackProfile ?? (fallbackProfile = new GripperProfile { parallel = shape, approachDistance = approachDistance });
+        public GripperShape Shape => Profile.parallel;
+        public float ApproachDistance => Profile.approachDistance;
 
         private Rigidbody body;
         private Vector3 homePosition;
@@ -101,6 +110,7 @@ namespace SortQuest
         private Coroutine runRoutine;
         private TrashItem heldItem;
         private FixedJoint heldJoint;
+        private GripperProfile fallbackProfile;
 
         private void Awake()
         {
@@ -116,6 +126,7 @@ namespace SortQuest
             if (visual == null) visual = GetComponent<GripperVisual>();
             if (arm == null) arm = FindAnyObjectByType<RobotArmDisplay>();
             if (robotCamera == null) robotCamera = FindAnyObjectByType<RobotCamera>();
+            if (catalog == null) catalog = FindAnyObjectByType<GripperCatalog>();
             if (policy == null || belt == null || spawner == null)
             {
                 Debug.LogError("[SortQuest] RobotGripper needs a GraspPolicy, ConveyorBelt, and TrashSpawner.", this);
@@ -127,6 +138,23 @@ namespace SortQuest
             homeRotation = transform.rotation;
             OpenFingers();
             Active = runOnStart;
+        }
+
+        private void OnEnable()
+        {
+            if (catalog != null) catalog.Changed += HandleGripperChanged;
+        }
+
+        private void OnDisable()
+        {
+            if (catalog != null) catalog.Changed -= HandleGripperChanged;
+        }
+
+        // A different gripper was chosen: drop whatever the robot was doing and start over with it.
+        private void HandleGripperChanged(GripperProfile profile)
+        {
+            ResetRobot();
+            ResetStats();
         }
 
         private void Start()
@@ -177,7 +205,7 @@ namespace SortQuest
             {
                 visual.Apply(leftOffset, rightOffset);
             }
-            else
+            else if (!Profile.IsSuction)
             {
                 ApplyFingerLayout();
             }
@@ -225,6 +253,8 @@ namespace SortQuest
         private IEnumerator TrySort(TrashItem item)
         {
             attempted.Add(item);
+            GripperProfile profile = Profile;
+            float lineUpDistance = profile.approachDistance;
             GraspChoice choice = policy.ChooseGrasp(item);
             GraspPlanned?.Invoke(item, choice);
             ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
@@ -233,10 +263,10 @@ namespace SortQuest
             // A real arm this size couldn't put the gripper there, so it's a miss without moving.
             GripperGrasp planned = WorldGrasp(choice, item);
             GripperGrasp lineUp = planned;
-            lineUp.Position -= planned.Approach * approachDistance;
+            lineUp.Position -= planned.Approach * lineUpDistance;
             if (arm != null && (!arm.CanReach(planned) || !arm.CanReach(lineUp)))
             {
-                Record(item, choice, false, "out of the arm's reach", image);
+                Record(item, choice, false, "out of the arm's reach", image, profile, choice.LocalGrasp.Width);
                 yield break;
             }
 
@@ -252,7 +282,7 @@ namespace SortQuest
                         yield break; // A person took it or it fell off; not counted as an attempt.
                     }
                     GripperGrasp target = WorldGrasp(choice, item);
-                    Vector3 position = phase == 0 ? target.Position - target.Approach * approachDistance : target.Position;
+                    Vector3 position = phase == 0 ? target.Position - target.Approach * lineUpDistance : target.Position;
                     if (MoveToward(position, target.Rotation))
                     {
                         break;
@@ -261,37 +291,63 @@ namespace SortQuest
                 }
             }
 
-            // 3. The open fingers must not run into the item or anything else on the way in. Then close.
+            // 3. The gripper must not run into the item or anything else on the way in. Then grasp.
             GripperGrasp grasp = WorldGrasp(choice, item);
-            bool blocked = shape.PathBlocked(grasp, approachDistance, body);
-            bool leftTouch = false;
-            bool rightTouch = false;
-            if (!blocked)
+            bool blocked = profile.Model.PathBlocked(grasp, lineUpDistance, body);
+            bool success;
+            string missReason;
+            float heldWidth;
+            if (profile.IsSuction)
             {
-                while (!(leftTouch && rightTouch) && (leftOffset > 0f || rightOffset > 0f))
+                // Press the cup on for a moment, following the belt, then check the seal.
+                if (!blocked)
                 {
+                    yield return waitForFixedUpdate;
                     if (!IsOnBelt(item))
                     {
-                        OpenFingers();
                         yield break;
                     }
                     grasp = WorldGrasp(choice, item);
                     MoveToward(grasp.Position, grasp.Rotation);
-                    leftTouch = leftTouch || shape.FingerTouches(grasp, true, leftOffset, item.Body);
-                    rightTouch = rightTouch || shape.FingerTouches(grasp, false, rightOffset, item.Body);
-                    float step = closeSpeed * Time.fixedDeltaTime;
-                    if (!leftTouch) leftOffset = Mathf.Max(0f, leftOffset - step);
-                    if (!rightTouch) rightOffset = Mathf.Max(0f, rightOffset - step);
-                    yield return waitForFixedUpdate;
                 }
+                success = !blocked && profile.suction.TrySeal(grasp, item.Body);
+                missReason = blocked ? "cup hit something on the way in" : "no seal (surface too curved, small, or tilted)";
+                heldWidth = profile.suction.cupDiameter;
+            }
+            else
+            {
+                GripperShape fingers = profile.parallel;
+                bool leftTouch = false;
+                bool rightTouch = false;
+                if (!blocked)
+                {
+                    while (!(leftTouch && rightTouch) && (leftOffset > 0f || rightOffset > 0f))
+                    {
+                        if (!IsOnBelt(item))
+                        {
+                            OpenFingers();
+                            yield break;
+                        }
+                        grasp = WorldGrasp(choice, item);
+                        MoveToward(grasp.Position, grasp.Rotation);
+                        leftTouch = leftTouch || fingers.FingerTouches(grasp, true, leftOffset, item.Body);
+                        rightTouch = rightTouch || fingers.FingerTouches(grasp, false, rightOffset, item.Body);
+                        float step = closeSpeed * Time.fixedDeltaTime;
+                        if (!leftTouch) leftOffset = Mathf.Max(0f, leftOffset - step);
+                        if (!rightTouch) rightOffset = Mathf.Max(0f, rightOffset - step);
+                        yield return waitForFixedUpdate;
+                    }
+                }
+                success = !blocked && leftTouch && rightTouch;
+                missReason = blocked ? "fingers hit something" : "fingers didn't both touch";
+                heldWidth = leftOffset + rightOffset;
             }
 
-            bool success = !blocked && leftTouch && rightTouch;
-            Record(item, choice, success, blocked ? "fingers hit something" : "fingers didn't both touch", image);
+            Record(item, choice, success, missReason, image, profile, heldWidth);
             if (!success)
             {
                 OpenFingers();
-                yield return StartCoroutine(MoveTo(body.position - grasp.Approach * approachDistance, body.rotation));
+                yield return StartCoroutine(MoveTo(body.position - grasp.Approach * lineUpDistance, body.rotation));
                 yield break;
             }
 
@@ -326,7 +382,8 @@ namespace SortQuest
             yield return new WaitForSeconds(0.3f);
         }
 
-        private void Record(TrashItem item, GraspChoice choice, bool success, string missReason, ImageData image)
+        private void Record(TrashItem item, GraspChoice choice, bool success, string missReason, ImageData image,
+            GripperProfile profile, float heldWidth)
         {
             Attempts++;
             if (success)
@@ -349,8 +406,9 @@ namespace SortQuest
             if (dataset != null)
             {
                 GripperGrasp actual = choice.LocalGrasp;
-                actual.Width = success ? leftOffset + rightOffset : choice.LocalGrasp.Width;
-                GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceRobot, item, actual, "gripper");
+                actual.Width = success ? heldWidth : choice.LocalGrasp.Width;
+                GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceRobot, item, actual, "gripper",
+                    profile.id, GraspRecord.InputNone);
                 record.outcome.bin = success ? TrashTypes.BinId(item.CorrectBin) : GraspRecord.NoBin;
                 record.outcome.correct = success;
                 if (image != null)
@@ -370,7 +428,7 @@ namespace SortQuest
                 return;
             }
             string accuracy = Attempts == 0 ? "no attempts yet" : $"{Successes} of {Attempts} grasps ({Accuracy * 100f:F0}%)";
-            statusText.text = $"ROBOT\n<size=60%>{accuracy}\n{lastResult}</size>";
+            statusText.text = $"ROBOT: {Profile.displayName.ToUpperInvariant()}\n<size=60%>{accuracy}\n{lastResult}</size>";
         }
 
         // ---------- Motion ----------
@@ -422,13 +480,13 @@ namespace SortQuest
 
         private void OpenFingers()
         {
-            leftOffset = shape.OpenOffset;
-            rightOffset = shape.OpenOffset;
+            leftOffset = Profile.parallel.OpenOffset;
+            rightOffset = Profile.parallel.OpenOffset;
         }
 
         private void ApplyFingerLayout()
         {
-            shape.Layout(palm, fingerLeft, fingerRight, leftOffset, rightOffset);
+            Profile.parallel.Layout(palm, fingerLeft, fingerRight, leftOffset, rightOffset);
         }
     }
 }

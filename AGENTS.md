@@ -1,4 +1,4 @@
-# SortQuest: guide for Claude Code
+# SortQuest: guide for Codex
 
 ## What this project is
 A Unity VR game for the Meta Quest 2, built at HackGT 13 (deadline Sunday, Sep 27, 2026, 12:00pm EDT).

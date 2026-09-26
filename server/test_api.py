@@ -75,6 +75,32 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(filters['outcome.dropped'], False)
         self.assertEqual(projection['_id'], 0)
 
+    def test_old_records_get_gripper_defaults(self):
+        app.state.db.grasps.insert_many.return_value.inserted_ids = ['a' * 32]
+        self.assertEqual(self.client.post('/grasps', json={'records': [record()]}).status_code, 200)
+        document = app.state.db.grasps.insert_many.call_args.args[0][0]
+        self.assertEqual((document['gripper'], document['input_device'], document['schema_version']),
+                         ('parallel_100mm', 'unknown', 1))
+
+    def test_new_gripper_fields_are_stored_and_validated(self):
+        app.state.db.grasps.insert_many.return_value.inserted_ids = ['a' * 32]
+        new = dict(record(), gripper='suction_40mm', input_device='controllers', schema_version=2)
+        self.assertEqual(self.client.post('/grasps', json={'records': [new]}).status_code, 200)
+        document = app.state.db.grasps.insert_many.call_args.args[0][0]
+        self.assertEqual((document['gripper'], document['input_device'], document['schema_version']),
+                         ('suction_40mm', 'controllers', 2))
+        for change in ({'gripper': 'Bad Gripper!'}, {'input_device': 'joystick'}, {'schema_version': 0}):
+            self.assertEqual(self.client.post('/grasps', json={'records': [dict(new, **change)]}).status_code, 422)
+
+    def test_gripper_filter(self):
+        cursor = app.state.db.grasps.find.return_value.sort.return_value.limit.return_value.max_time_ms.return_value
+        cursor.__iter__.return_value = iter([])
+        self.assertEqual(self.client.get('/grasps?gripper=suction_40mm').status_code, 200)
+        self.assertEqual(app.state.db.grasps.find.call_args.args[0]['gripper'], 'suction_40mm')
+        self.assertEqual(self.client.get('/grasps?gripper=parallel_100mm').status_code, 200)
+        self.assertEqual(app.state.db.grasps.find.call_args.args[0]['gripper'], {'$in': ['parallel_100mm', None]})
+        self.assertEqual(self.client.get('/grasps?gripper=Bad!').status_code, 422)
+
     def test_write_concern_failure_is_retryable(self):
         app.state.db.grasps.insert_many.side_effect = BulkWriteError({'nInserted': 1, 'writeErrors': [], 'writeConcernErrors': [{'code': 64}]})
         self.assertEqual(self.client.post('/grasps', json={'records': [record()]}).status_code, 503)

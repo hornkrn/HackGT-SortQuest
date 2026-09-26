@@ -16,6 +16,9 @@ namespace SortQuest
         [Tooltip("Found automatically if left empty.")]
         [SerializeField] private GraspDataset dataset;
 
+        [Tooltip("Found automatically if left empty. The bars show what the robot learned for the selected gripper.")]
+        [SerializeField] private GripperCatalog catalog;
+
         [Tooltip("See-through material (Sprites/Default). Created if left empty.")]
         [SerializeField] private Material material;
 
@@ -27,11 +30,13 @@ namespace SortQuest
         private bool dirty = true;
         private TextMeshPro[] labels;
         private Transform[] fills;
+        private TextMeshPro title;
 
         private void Awake()
         {
             if (policy == null) policy = FindAnyObjectByType<GraspPolicy>();
             if (dataset == null) dataset = FindAnyObjectByType<GraspDataset>();
+            if (catalog == null) catalog = FindAnyObjectByType<GripperCatalog>();
             if (material == null) material = VizUtil.FallbackMaterial();
             Build();
         }
@@ -39,11 +44,18 @@ namespace SortQuest
         private void OnEnable()
         {
             if (dataset != null) dataset.RecordAdded += HandleRecordAdded;
+            if (catalog != null) catalog.Changed += HandleGripperChanged;
         }
 
         private void OnDisable()
         {
             if (dataset != null) dataset.RecordAdded -= HandleRecordAdded;
+            if (catalog != null) catalog.Changed -= HandleGripperChanged;
+        }
+
+        private void HandleGripperChanged(GripperProfile profile)
+        {
+            dirty = true;
         }
 
 
@@ -57,7 +69,7 @@ namespace SortQuest
             float left = -totalWidth * 0.5f;
             float top = rowHeight * types.Length * 0.5f;
 
-            TextMeshPro title = VizUtil.CreateText("Title", transform, new Vector3(0f, top + 0.08f, 0f),
+            title = VizUtil.CreateText("Title", transform, new Vector3(0f, top + 0.08f, 0f),
                 new Vector2(totalWidth, 0.12f), 0.5f, TextAlignmentOptions.Center);
             title.text = "What the robot has learned";
 
@@ -97,6 +109,7 @@ namespace SortQuest
         {
             float left = -(labelWidth + barWidth) * 0.5f;
             float top = rowHeight * types.Length * 0.5f;
+            title.text = $"What the robot has learned\n<size=60%>{GripperCatalog.CurrentOrStandard(catalog).displayName} gripper</size>";
             for (int i = 0; i < types.Length; i++)
             {
                 float y = top - rowHeight * (i + 0.5f);
@@ -105,15 +118,16 @@ namespace SortQuest
                 if (policy != null && policy.TryGetLearnedGrasp(types[i], out GraspChoice choice))
                 {
                     confidence = choice.Confidence;
+                    // People's grasps for this item; the suction cup learns from converted, practiced versions of them.
                     int taught = 0;
-                    foreach (GraspRecord record in dataset != null ? dataset.GoodGrasps(types[i]) : new System.Collections.Generic.List<GraspRecord>())
+                    if (dataset != null)
                     {
-                        if (record.source == GraspRecord.SourceHuman)
+                        foreach (GraspRecord record in dataset.GoodGrasps(types[i]))
                         {
-                            taught++;
+                            if (record.source == GraspRecord.SourceHuman) taught++;
                         }
                     }
-                    int practiced = choice.GoodCount - taught;
+                    int practiced = choice.GoodCount - choice.HumanCount;
                     labels[i].text = $"{itemName}  <size=75%>{taught} taught, {practiced} practiced, " +
                                      $"{confidence * 100f:F0}% sure</size>";
                 }

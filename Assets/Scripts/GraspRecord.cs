@@ -17,6 +17,16 @@ namespace SortQuest
         public const string SourceRobot = "robot";
         public const string NoBin = "none";
 
+        /// <summary>Current record format. 1 = before gripper, input_device, and schema_version existed.</summary>
+        public const int CurrentSchemaVersion = 2;
+
+        // input_device values: how the demonstration was made.
+        public const string InputHands = "hands";                 // real hand tracking
+        public const string InputControllers = "controllers";     // hand pose driven by Touch controllers
+        public const string InputSimulator = "simulator";         // Meta XR Simulator's synthetic hands
+        public const string InputUnknown = "unknown";              // records saved before this field existed
+        public const string InputNone = "none";                    // robot attempts
+
         /// <summary>Unique id, set once when the record is created, so a server can ignore duplicate uploads.</summary>
         public string record_id;
         public string session_id;
@@ -30,6 +40,15 @@ namespace SortQuest
         public OutcomeData outcome = new OutcomeData();
         public string hand;
 
+        /// <summary>Gripper id this grasp is for (see GripperCatalog), for example "parallel_100mm".</summary>
+        public string gripper;
+
+        /// <summary>How the demonstration was made: hands, controllers, simulator, unknown, or none (robot).</summary>
+        public string input_device;
+
+        /// <summary>Record format version; 0 means loaded from an older file and not yet migrated.</summary>
+        public int schema_version;
+
         /// <summary>What the robot camera saw at the moment of the grasp. Empty id if no image was taken.</summary>
         public ImageData image = new ImageData();
 
@@ -37,7 +56,8 @@ namespace SortQuest
         public bool IsGood => outcome != null && outcome.correct && !outcome.dropped;
 
         /// <summary>A new record for a grasp on an item, stored in the item's frame. The outcome is filled in later.</summary>
-        public static GraspRecord Create(GraspDataset dataset, string source, TrashItem item, GripperGrasp localGrasp, string hand)
+        public static GraspRecord Create(GraspDataset dataset, string source, TrashItem item, GripperGrasp localGrasp, string hand,
+            string gripperId, string inputDevice)
         {
             Transform itemTransform = item.transform;
             var record = new GraspRecord
@@ -49,7 +69,10 @@ namespace SortQuest
                 source = source,
                 item_type = TrashTypes.ItemId(item.ItemType),
                 correct_bin = TrashTypes.BinId(item.CorrectBin),
-                hand = hand
+                hand = hand,
+                gripper = gripperId,
+                input_device = inputDevice,
+                schema_version = CurrentSchemaVersion
             };
             record.grasp.PosLocal = localGrasp.Position;
             record.grasp.RotLocal = localGrasp.Rotation;
@@ -63,7 +86,7 @@ namespace SortQuest
         /// A checked variation of a good grasp. It keeps the original's item, pose, and outcome,
         /// with a new grasp and source "augmented".
         /// </summary>
-        public static GraspRecord CreateAugmented(GraspRecord original, GripperGrasp localGrasp)
+        public static GraspRecord CreateAugmented(GraspRecord original, GripperGrasp localGrasp, string gripperId)
         {
             var record = new GraspRecord
             {
@@ -75,6 +98,9 @@ namespace SortQuest
                 item_type = original.item_type,
                 correct_bin = original.correct_bin,
                 hand = original.hand,
+                gripper = gripperId,
+                input_device = original.input_device,
+                schema_version = CurrentSchemaVersion,
                 item_pose_world = original.item_pose_world,
                 image = original.image, // Same scene and item pose, so the original's images apply.
                 outcome = new OutcomeData
@@ -88,6 +114,24 @@ namespace SortQuest
             record.grasp.RotLocal = localGrasp.Rotation;
             record.grasp.width_m = GraspMath.Round(localGrasp.Width);
             return record;
+        }
+
+        /// <summary>
+        /// Fills fields that older files lack. Returns true if anything changed. Everything recorded before
+        /// grippers existed was for the standard gripper, and the input device wasn't known.
+        /// </summary>
+        public bool MigrateToCurrentSchema()
+        {
+            bool changed = false;
+            if (string.IsNullOrEmpty(record_id)) { record_id = NewId(); changed = true; }
+            if (string.IsNullOrEmpty(gripper)) { gripper = GripperCatalog.StandardId; changed = true; }
+            if (string.IsNullOrEmpty(input_device))
+            {
+                input_device = source == SourceRobot ? InputNone : InputUnknown;
+                changed = true;
+            }
+            if (schema_version <= 0) { schema_version = 1; changed = true; }
+            return changed;
         }
 
         /// <summary>A new unique record id (32 hex characters).</summary>

@@ -11,7 +11,7 @@ namespace SortQuest
     /// A finger's "offset" is the distance from the grasp point to the finger's inner face.
     /// </summary>
     [Serializable]
-    public class GripperShape
+    public class GripperShape : IGripperModel
     {
         [Tooltip("Widest the fingers can open, in meters.")]
         public float maxOpening = 0.1f;
@@ -32,6 +32,14 @@ namespace SortQuest
         private static readonly Collider[] OverlapBuffer = new Collider[16];
 
         public float OpenOffset => maxOpening * 0.5f;
+
+        // Palm housing, flange, and wrist behind the fingers, matching GripperVisual's two-finger model.
+        public float MountOffset => fingerLength - fingertipPastGrasp + 0.135f;
+
+        public bool TryGrasp(GripperGrasp grasp, Rigidbody item, out float width)
+        {
+            return TryClose(grasp, item, out width);
+        }
         public Vector3 FingerSize => new Vector3(fingerThickness, fingerWidth, fingerLength);
 
         public Vector3 FingerLocalCenter(bool left, float offset)

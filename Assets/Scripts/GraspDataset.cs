@@ -80,6 +80,7 @@ namespace SortQuest
             {
                 if (record == null || string.IsNullOrEmpty(record.record_id) || !record.IsGood ||
                     record.source == GraspRecord.SourceRobot || !known.Add(record.record_id)) continue;
+                record.MigrateToCurrentSchema();
                 records.Add(record);
                 remoteIds.Add(record.record_id);
                 added++;
@@ -94,7 +95,7 @@ namespace SortQuest
                 return;
             }
             int skipped = 0;
-            int missingIds = 0;
+            int migrated = 0;
             try
             {
                 foreach (string line in File.ReadAllLines(FilePath))
@@ -106,10 +107,9 @@ namespace SortQuest
                     try
                     {
                         GraspRecord record = JsonUtility.FromJson<GraspRecord>(line);
-                        if (string.IsNullOrEmpty(record.record_id))
+                        if (record.MigrateToCurrentSchema())
                         {
-                            record.record_id = GraspRecord.NewId();
-                            missingIds++;
+                            migrated++;
                         }
                         records.Add(record);
                     }
@@ -126,11 +126,12 @@ namespace SortQuest
             Debug.Log($"[SortQuest] Loaded {records.Count} saved grasps from {FilePath}" +
                       (skipped > 0 ? $" (skipped {skipped} bad lines)" : ""));
 
-            // Records saved before record_id existed get one now, written back once so the ids stay stable.
-            if (missingIds > 0)
+            // Older records get missing fields (record_id, gripper, input_device, schema_version) filled in,
+            // written back once so ids stay stable.
+            if (migrated > 0)
             {
                 RewriteFile();
-                Debug.Log($"[SortQuest] Gave {missingIds} older grasp records a record_id.");
+                Debug.Log($"[SortQuest] Updated {migrated} older grasp records to the current format.");
             }
         }
 

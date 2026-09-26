@@ -3,9 +3,10 @@ using UnityEngine;
 namespace SortQuest
 {
     /// <summary>
-    /// A see-through gripper that sits on an item to show a grasp. It follows the item as it moves.
-    /// PlayerGrasp: shows the player's pinch converted to a gripper grasp while they hold the item.
-    /// RobotPlan: shows where the robot is about to grab, until its attempt ends.
+    /// A see-through gripper that sits on an item to show a grasp for the selected gripper, following the item.
+    /// PlayerGrasp: shows the player's pinch converted to the selected gripper while they hold the item
+    /// (for the suction cup, the pinch is moved onto the item's surface along the hand's approach direction).
+    /// RobotPlan: shows where the robot is about to grasp, until its attempt ends.
     /// </summary>
     public class GhostGripper : MonoBehaviour
     {
@@ -23,6 +24,9 @@ namespace SortQuest
         [Tooltip("Found automatically if left empty.")]
         [SerializeField] private RobotGripper robot;
 
+        [Tooltip("Found automatically if left empty.")]
+        [SerializeField] private GripperCatalog catalog;
+
         [Tooltip("See-through material (Sprites/Default). Created if left empty.")]
         [SerializeField] private Material material;
 
@@ -31,28 +35,41 @@ namespace SortQuest
         [Tooltip("Seconds the ghost stays after the grab or attempt ends.")]
         [SerializeField] private float lingerSeconds = 1.5f;
 
-        [Tooltip("Gripper size; matches the robot gripper by default.")]
-        [SerializeField] private GripperShape shape = new GripperShape();
-
         private Transform root;
+        private Transform fingerParts;
+        private Transform suctionParts;
         private Transform palm;
         private Transform fingerLeft;
         private Transform fingerRight;
+        private Transform cup;
+        private Transform stem;
         private TrashItem target;
         private GripperGrasp localGrasp;
         private float hideAt = -1f;
+
+        private GripperProfile Profile => GripperCatalog.CurrentOrStandard(catalog);
 
         private void Awake()
         {
             if (recorder == null) recorder = FindAnyObjectByType<GraspRecorder>();
             if (robot == null) robot = FindAnyObjectByType<RobotGripper>();
+            if (catalog == null) catalog = FindAnyObjectByType<GripperCatalog>();
             if (material == null) material = VizUtil.FallbackMaterial();
 
             root = new GameObject("Ghost").transform;
             root.SetParent(transform, false);
-            palm = VizUtil.CreateShape("Palm", root, VizUtil.CubeMesh, material, color).transform;
-            fingerLeft = VizUtil.CreateShape("FingerLeft", root, VizUtil.CubeMesh, material, color).transform;
-            fingerRight = VizUtil.CreateShape("FingerRight", root, VizUtil.CubeMesh, material, color).transform;
+            fingerParts = new GameObject("TwoFinger").transform;
+            fingerParts.SetParent(root, false);
+            palm = VizUtil.CreateShape("Palm", fingerParts, VizUtil.CubeMesh, material, color).transform;
+            fingerLeft = VizUtil.CreateShape("FingerLeft", fingerParts, VizUtil.CubeMesh, material, color).transform;
+            fingerRight = VizUtil.CreateShape("FingerRight", fingerParts, VizUtil.CubeMesh, material, color).transform;
+
+            suctionParts = new GameObject("Suction").transform;
+            suctionParts.SetParent(root, false);
+            cup = VizUtil.CreateShape("Cup", suctionParts, VizUtil.CylinderMesh, material, color).transform;
+            stem = VizUtil.CreateShape("Stem", suctionParts, VizUtil.CylinderMesh, material, color).transform;
+            cup.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            stem.localRotation = Quaternion.Euler(90f, 0f, 0f);
             root.gameObject.SetActive(false);
         }
 
@@ -122,10 +139,36 @@ namespace SortQuest
                 return;
             }
 
+            GripperProfile profile = Profile;
             GripperGrasp world = HandGripperPose.ToWorld(localGrasp, target.transform);
+            bool suction = profile.IsSuction;
+            if (suction && source == Source.PlayerGrasp)
+            {
+                // The player's pinch, moved onto the surface where a cup would press.
+                if (!SuctionShape.ProjectOntoSurface(world, target.Body, out world))
+                {
+                    root.gameObject.SetActive(false);
+                    return;
+                }
+                root.gameObject.SetActive(true);
+            }
+
             root.SetPositionAndRotation(world.Position, world.Rotation);
-            float half = Mathf.Clamp(localGrasp.Width, 0.005f, shape.maxOpening) * 0.5f;
-            shape.Layout(palm, fingerLeft, fingerRight, half, half);
+            fingerParts.gameObject.SetActive(!suction);
+            suctionParts.gameObject.SetActive(suction);
+            if (suction)
+            {
+                SuctionShape shape = profile.suction;
+                cup.localPosition = new Vector3(0f, 0f, -0.004f);
+                cup.localScale = new Vector3(shape.cupDiameter, 0.004f, shape.cupDiameter);
+                stem.localPosition = new Vector3(0f, 0f, -0.008f - shape.stemLength * 0.5f);
+                stem.localScale = new Vector3(0.024f, shape.stemLength * 0.5f, 0.024f);
+            }
+            else
+            {
+                float half = Mathf.Clamp(localGrasp.Width, 0.005f, profile.parallel.maxOpening) * 0.5f;
+                profile.parallel.Layout(palm, fingerLeft, fingerRight, half, half);
+            }
         }
 
         private bool StillRelevant()

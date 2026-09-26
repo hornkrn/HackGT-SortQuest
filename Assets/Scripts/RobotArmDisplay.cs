@@ -13,7 +13,8 @@ namespace SortQuest
         [Tooltip("The RobotGripper's transform, which the arm holds by its wrist.")]
         [SerializeField] private Transform gripper;
 
-        [Tooltip("Distance from the grasp point back to the top of the gripper's wrist.")]
+        [Tooltip("Distance from the grasp point back to the top of the gripper's wrist. " +
+                 "Used only if the gripper has no RobotGripper; otherwise the selected gripper's value is used.")]
         [SerializeField] private float mountOffset = 0.185f;
 
         [Header("Size (meters)")]
@@ -40,6 +41,10 @@ namespace SortQuest
         private Transform forearm;
         private Transform wristJoint;
         private Vector3 lastDirection = Vector3.forward;
+        private RobotGripper robotGripper;
+
+        /// <summary>The selected gripper's wrist length, so the arm meets both two-finger and suction grippers.</summary>
+        private float CurrentMountOffset => robotGripper != null ? robotGripper.Profile.MountOffset : mountOffset;
 
         private void Awake()
         {
@@ -48,13 +53,17 @@ namespace SortQuest
                 RobotGripper robot = FindAnyObjectByType<RobotGripper>();
                 if (robot != null) gripper = robot.transform;
             }
+            if (gripper != null)
+            {
+                robotGripper = gripper.GetComponent<RobotGripper>();
+            }
             Build();
         }
 
         /// <summary>Where the arm must put its wrist to hold the gripper at this pose.</summary>
         public Vector3 MountPoint(GripperGrasp pose)
         {
-            return pose.Position + pose.Rotation * new Vector3(0f, 0f, -mountOffset);
+            return pose.Position + pose.Rotation * new Vector3(0f, 0f, -CurrentMountOffset);
         }
 
         public bool CanReach(GripperGrasp pose)
@@ -69,7 +78,7 @@ namespace SortQuest
             {
                 return;
             }
-            Vector3 target = gripper.position + gripper.rotation * new Vector3(0f, 0f, -mountOffset);
+            Vector3 target = gripper.position + gripper.rotation * new Vector3(0f, 0f, -CurrentMountOffset);
             Solve(target);
         }
 

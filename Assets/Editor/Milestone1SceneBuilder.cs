@@ -13,7 +13,8 @@ namespace SortQuest
     /// <summary>
     /// Menu items that build the milestone 1 scene objects and trash item prefabs, add grasp recording (milestone 2),
     /// add the robot gripper (milestone 3), add the game manager (milestone 4), add the learning visuals (milestone 5),
-    /// and upgrade the robot with a camera, a detailed gripper, and an arm.
+    /// upgrade the robot with a camera, a detailed gripper, and an arm, and add the menu and gripper types
+    /// (milestone 7).
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -320,7 +321,6 @@ namespace SortQuest
             GraspAugmenter augmenter = GetOrAdd<GraspAugmenter>(augmenterObject, out _);
             SetIfEmpty(augmenter, "dataset", Object.FindAnyObjectByType<GraspDataset>());
             SetIfEmpty(augmenter, "spawner", Object.FindAnyObjectByType<TrashSpawner>());
-            SetIfEmpty(augmenter, "robot", Object.FindAnyObjectByType<RobotGripper>());
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
@@ -472,6 +472,88 @@ namespace SortQuest
                 part.GetComponent<Renderer>().sharedMaterial = material;
             }
             return part.transform;
+        }
+
+        [MenuItem("SortQuest/Add Menu and Gripper Types (Milestone 7)")]
+        public static void AddMenuAndGrippers()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            GameManager game = Object.FindAnyObjectByType<GameManager>();
+            if (game == null || Object.FindAnyObjectByType<RobotGripper>() == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Run the earlier SortQuest menu items first (milestones 1 to 5).", "OK");
+                return;
+            }
+            GameObject template = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(HandGrabTemplateGuid));
+            if (template == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Couldn't find the Interaction SDK's HandGrabInteraction template.", "OK");
+                return;
+            }
+
+            // The gripper list; its profiles are filled in with defaults and can be tuned in the Inspector.
+            GameObject grippers = GetOrCreate("Grippers", null, null, out _);
+            GetOrAdd<GripperCatalog>(grippers, out _);
+
+            // Saved per-gripper progress (badges on the menu).
+            GetOrAdd<GripperProgress>(game.gameObject, out _);
+
+            // Menu blocks and table, in front of the player between the player and the belt, clear of the bins.
+            ChoiceBlock blockPrefab = BuildChoiceBlockPrefab(template);
+            GameObject menuObject = GetOrCreate("MainMenu", null, null, out bool menuCreated);
+            if (menuCreated)
+            {
+                menuObject.transform.position = new Vector3(0f, 1.15f, 0.28f); // MainMenu also adjusts to the player's height
+            }
+            MainMenu menu = GetOrAdd<MainMenu>(menuObject, out _);
+            SetIfEmpty(menu, "blockPrefab", blockPrefab);
+            SetIfEmpty(menu, "tableMaterial", GetOrCreateLitMaterial("Mat_RobotBody", new Color(0.16f, 0.17f, 0.19f), 0.5f, 0.55f));
+            SetIfEmpty(game, "menu", menu);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[SortQuest] Menu and gripper types added and scene saved ({scene.path}).");
+        }
+
+        /// <summary>A 9 cm grabbable block (grab interaction like the trash items) with a ChoiceBlock component.</summary>
+        private static ChoiceBlock BuildChoiceBlockPrefab(GameObject template)
+        {
+            string path = $"{PrefabFolder}/ChoiceBlock.prefab";
+            GameObject existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (existing != null)
+            {
+                return existing.GetComponent<ChoiceBlock>();
+            }
+
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = "ChoiceBlock";
+            go.transform.localScale = Vector3.one * 0.09f;
+            go.GetComponent<Renderer>().sharedMaterial =
+                GetOrCreateLitMaterial("Mat_ChoiceBlock", new Color(0.85f, 0.85f, 0.9f), 0.1f, 0.6f);
+            Rigidbody body = go.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
+            Grabbable grabbable = AddGrabInteraction(go, body, template);
+            ChoiceBlock block = go.AddComponent<ChoiceBlock>();
+            var so = new SerializedObject(block);
+            so.FindProperty("grabbable").objectReferenceValue = grabbable;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, path);
+            Object.DestroyImmediate(go);
+            Debug.Log($"[SortQuest] Created prefab {path}");
+            return prefab.GetComponent<ChoiceBlock>();
         }
 
         [MenuItem("SortQuest/Open Grasp Data Folder")]
@@ -778,6 +860,11 @@ namespace SortQuest
         {
             var so = new SerializedObject(target);
             SerializedProperty prop = so.FindProperty(propertyName);
+            if (prop == null)
+            {
+                Debug.LogWarning($"[SortQuest] {target.GetType().Name} has no field '{propertyName}'; skipped.");
+                return;
+            }
             if (prop.objectReferenceValue == null)
             {
                 prop.objectReferenceValue = value;
@@ -789,6 +876,11 @@ namespace SortQuest
         {
             var so = new SerializedObject(target);
             SerializedProperty prop = so.FindProperty(propertyName);
+            if (prop == null)
+            {
+                Debug.LogWarning($"[SortQuest] {target.GetType().Name} has no field '{propertyName}'; skipped.");
+                return;
+            }
             for (int i = 0; i < prop.arraySize; i++)
             {
                 if (prop.GetArrayElementAtIndex(i).objectReferenceValue != null)

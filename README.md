@@ -20,6 +20,8 @@ Robots learn to grasp objects from examples, and good examples are slow and expe
 4. **Learn.** For each type of item, the robot picks the grasp that the most successful players agree on, rather than averaging grasps together. Averaging a grasp on the left of a bottle with one on the right would produce a grasp on empty air. With no data yet, the robot guesses, and it often fails.
 5. **Improve.** The robot sorts items itself while the game shows its accuracy and confidence, so players can see their demonstrations making it better.
 
+**Gripper types.** Each game starts at a menu where the player grabs a block to choose which robot gripper to teach: a standard, compact, or wide two-finger gripper, or a suction cup. Each gripper learns separately and has its own confidence, mastery, and saved progress. Two-finger grippers learn from people's pinches directly. For the suction cup, each good pinch is converted to a contact point on the item's surface along the hand's approach direction, then practiced and checked for a seal. After Results, the player can keep improving the same gripper or return to the menu.
+
 ## How SortQuest is different
 
 Recent research shows VR gameplay data can help train real robots. SortQuest applies that idea to recycling, where robots face a data shortage for new facilities and for rare, dangerous items like lithium-ion batteries. Players sort trash with their own hands, each good grab is saved as a two-finger gripper grasp with a camera image and a success label, and a robot in the same scene learns from those grasps while the player watches it improve.
@@ -36,8 +38,9 @@ Recent research shows VR gameplay data can help train real robots. SortQuest app
 We haven't found another project that combines all of these:
 
 * **People teach the robot.** Human sorting is the training signal, and players learn the bins as a side effect.
-* **Natural hands, no robot controls.** Players pick items up with hand tracking. There is no teleoperation, controller mapping, or robot hardware, so anyone at a booth can contribute.
-* **Your grab, shown as a robot grasp.** While you hold an item, a see-through two-finger gripper on it shows how your grab converts into a gripper grasp.
+* **Direct grabbing, no robot controls.** Players pick items up directly, with hand tracking or with controllers shown as hands. There is no teleoperation of a robot and no robot hardware, so anyone at a booth can contribute.
+* **Your grab, shown as a robot grasp.** While you hold an item, a see-through gripper on it shows how your grab converts into a grasp for the selected gripper.
+* **Several gripper types from the same demonstrations.** Players choose a standard, compact, or wide two-finger gripper or a suction cup. Each learns separately, and the suction cup learns from pinches converted to surface contact points.
 * **A learning loop you can watch in one game.** A live accuracy chart, per item confidence bars with taught and practiced counts, and an orange ghost gripper that shows where the robot is about to grab. In Teach Me, the robot names the item it did worst on, asks the player to demonstrate it, then tries again, and Results show its success on that item before and after.
 * **Physics checked practice.** Each good human grasp is tried with small variations on a hidden copy of the item, using the robot's own finger checks, and only the variations that work are kept.
 * **Standard, arm-independent data.** Each grasp is saved relative to the object with a success label and the robot camera's color, depth, and item mask images, the kind of data grasp research uses. The robot arm is computed with inverse kinematics and has a real reach limit, but no arm data is needed.
@@ -46,7 +49,8 @@ We haven't found another project that combines all of these:
 ### Honest limitations
 
 * **Simulation to reality gap.** The trash is six clean, simple shapes, and only their rotation on the belt varies. Grab success is idealized, with no friction or slipping, and the camera images are rendered. The data is best used for pre-training, then fine-tuned with a small amount of real robot data, which is the usual recipe.
-* **Two-finger gripper only.** Grasps and practiced variations are checked against our gripper's size. Many sorting robots use suction; the recorded grasp center and approach direction could suggest where a suction cup should pick, but we have not tested that.
+* **Simple gripper models.** A two-finger grasp succeeds if both fingers touch the item; a suction grasp succeeds if the surface under the cup is flat enough and faces the cup closely enough. There is no friction, vacuum pressure, or weight in either check. Converting a pinch into a suction contact point is our own heuristic and has not been tested on a real suction gripper.
+* **Controllers instead of hand tracking.** Current play sessions use Touch controllers shown as hands, so finger positions come from button presses rather than real fingers. Those grasps are labeled `input_device: "controllers"` so they can be told apart; real hand tracking is planned after the hackathon.
 * **Hand to gripper conversion.** A thumb and index finger pinch maps well to a two-finger gripper; whole-hand grabs do not.
 * **Noisy players.** The robot learns only from grabs that landed in the correct bin without being dropped. Giving more weight to accurate players is not built yet.
 * **Scale.** Relatively few people own VR headsets, so the near-term setting is a booth, classroom, or museum. Uploading data to a shared server is still in progress.
@@ -62,6 +66,7 @@ We haven't found another project that combines all of these:
 | 5a | Learning visuals (accuracy chart, confidence bars, ghost grippers, grab dots) and simulation checked grasp augmentation | Done |
 | 5b | FastAPI/MongoDB uploads and Unity LAN client | Implemented; APK testing pending |
 | 6 | Robot camera that saves color, depth, and mask images with each grasp; industrial style gripper; display arm with a real reach limit | Done |
+| 7 | Menu with grabbable choice blocks; four gripper types (three two-finger sizes and a suction cup) that learn separately; keep improving or return to the menu after Results | Done |
 
 The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a sign listing what goes in it, and the item in the player's hand shows its name.
 
@@ -80,7 +85,7 @@ The six starting items are an aluminum can, a plastic bottle, a cardboard box, c
    * **Meta Quest Link:** a Quest headset connected to the PC by USB cable or Air Link.
    * **Meta XR Simulator:** no headset needed. Turn on its runtime toggle, press Play, then set both inputs to Hand. Released items drop straight down in the simulator because its hands swing with the view.
 
-To test in a scene of your own without editing the main scene, create and save a new scene, then run the **SortQuest** menu items in order: **Build Milestone 1 Scene**, **Add Grasp Recording (Milestone 2)**, **Add Robot Gripper (Milestone 3)**, **Add Game Manager (Milestone 4)**, **Add Learning Visuals and Augmenter (Milestone 5)**, and **Upgrade Robot (Camera, Gripper, Arm)**. Each is safe to run more than once.
+To test in a scene of your own without editing the main scene, create and save a new scene, then run the **SortQuest** menu items in order: **Build Milestone 1 Scene**, **Add Grasp Recording (Milestone 2)**, **Add Robot Gripper (Milestone 3)**, **Add Game Manager (Milestone 4)**, **Add Learning Visuals and Augmenter (Milestone 5)**, **Upgrade Robot (Camera, Gripper, Arm)**, and **Add Menu and Gripper Types (Milestone 7)**. Each is safe to run more than once.
 
 ## Grasp data
 
@@ -99,11 +104,14 @@ Grasps are saved locally as JSON Lines (one record per line) in `grasps.jsonl` u
   "item_pose_world": { "pos": [0.42, 0.95, 0.30], "rot": [0, 0, 0, 1] },
   "outcome": { "bin": "hazardous", "correct": true, "dropped": false, "hold_s": 1.6 },
   "hand": "right",
+  "gripper": "parallel_100mm",
+  "input_device": "controllers",
+  "schema_version": 2,
   "image": { "id": "4be07c1f93a24d6f8d0e2b7c5a1f3e90", "cam_pos": [0.2, 2.0, 0.6], "cam_rot": [0.7071, 0, 0, 0.7071], "fov_y_deg": 80, "rgb_size": 256, "depth_size": 128 }
 }
 ```
 
-Positions are in meters and rotations are quaternions written as [x, y, z, w]. The grasp is expressed in the item's frame, using its position and rotation but not its scale. `record_id` is a unique id set once when the record is created. `source` is `human` (a player's grab), `augmented` (a variation of a good human grasp that passed the robot's physics checks), or `robot` (one of the robot's own attempts). The robot learns from `human` and `augmented` records only.
+Positions are in meters and rotations are quaternions written as [x, y, z, w]. The grasp is expressed in the item's frame, using its position and rotation but not its scale. `record_id` is a unique id set once when the record is created. `source` is `human` (a player's grab), `augmented` (a variation of a good human grasp that passed the robot's physics checks), or `robot` (one of the robot's own attempts). The robot learns from `human` and `augmented` records only. `gripper` is the gripper the record is for: the one selected while a person demonstrated, the one a practiced variation was checked against, or the one the robot used (`parallel_100mm`, `parallel_85mm`, `parallel_140mm`, or `suction_40mm`). `input_device` says how a demonstration was made: `hands` (hand tracking), `controllers` (controllers driving hand poses), `simulator`, `unknown` (records from before this field existed), or `none` (robot attempts). `schema_version` is 2 for the current format; older records are updated to include these fields when the game loads them.
 
 `image` links the grasp to what an overhead **robot camera** saw at that moment, which is the training format grasp detection models use (what the camera saw, the grasp, and whether it worked). The images are saved next to `grasps.jsonl` in an `images` folder, named by the image id:
 
@@ -170,8 +178,8 @@ flowchart LR
 |---|---|---|---|
 | `GET /health` | nothing | `{"ok": true}` | Lets the game and the team check the server is up |
 | `POST /grasps` | `{"records": [GraspRecord, ...]}`, up to about 100 per batch | `{"inserted": 12, "duplicates": 0}` | Store new records from a headset |
-| `GET /grasps?item_type=battery_aa&good=true&source=human,augmented&limit=500` | query parameters | `{"records": [GraspRecord, ...]}` | Optional: let a headset learn from every player's good grasps, not just its own |
-| `GET /stats` | nothing | counts per item type and source, good grasp counts, robot success rate over time | A live stats page for judges, and data for charts |
+| `GET /grasps?item_type=battery_aa&good=true&source=human,augmented&gripper=suction_40mm&limit=500` | query parameters (`gripper` optional) | `{"records": [GraspRecord, ...]}` | Optional: let a headset learn from every player's good grasps, not just its own |
+| `GET /stats` | nothing | counts per item type, source, and gripper; good grasp counts; robot success rate over time and per gripper | A live stats page for judges, and data for charts |
 | `PUT /images/{image_id}/{kind}` | the raw file bytes, where `kind` is `rgb`, `depth`, or `mask` | `{"stored": true}` | Optional: store the camera images, for example in GridFS or object storage, linked by `image.id` |
 
 ### MongoDB schema
@@ -191,6 +199,9 @@ flowchart LR
 | `item_type` | string | `aluminum_can`, `plastic_bottle`, `cardboard_box`, `crumpled_paper`, `battery_aa`, `power_bank` |
 | `correct_bin` | string | `metal`, `plastic`, `paper`, `hazardous` |
 | `hand` | string | `left`, `right`, or `gripper` (robot) |
+| `gripper` | string | Gripper id, for example `parallel_100mm` or `suction_40mm`. Documents stored before this field existed have none and belong to `parallel_100mm` |
+| `input_device` | string | `hands`, `controllers`, `simulator`, `unknown`, or `none` |
+| `schema_version` | int | 2 for the current format; the server stores 1 for older game builds |
 | `grasp.pos_local` | number[3] | Grasp center in meters, in the item's frame |
 | `grasp.rot_local` | number[4] | Gripper rotation as a quaternion [x, y, z, w], in the item's frame |
 | `grasp.width_m` | number | Finger opening in meters |
@@ -230,6 +241,9 @@ db.createCollection("grasps", {
                             "crumpled_paper", "battery_aa", "power_bank"] },
       correct_bin: { enum: ["metal", "plastic", "paper", "hazardous"] },
       hand:        { enum: ["left", "right", "gripper"] },
+      gripper:     { bsonType: "string", pattern: "^[a-z0-9_]{1,40}$" },
+      input_device:   { enum: ["hands", "controllers", "simulator", "unknown", "none"] },
+      schema_version: { bsonType: "int", minimum: 1 },
       grasp: {
         bsonType: "object", required: ["pos_local", "rot_local", "width_m"],
         properties: {
@@ -289,6 +303,7 @@ Several records can share one image (augmented records reuse their original's im
 Notes for the server:
 
 * **Storage and validation:** see the MongoDB schema above. A Pydantic model that mirrors the same fields lets FastAPI reject bad records before they reach the database.
+* **Gripper fields and older builds:** the server accepts records without `gripper`, `input_device`, or `schema_version` and fills in `parallel_100mm`, `unknown`, and 1. Game builds that send the new fields need the updated server, because older servers reject unknown fields. The live database's validator does not block extra fields, so no database change is required; adding the three optional properties above to the validator is recommended.
 * **Security:** there are no user accounts. A shared API key header can stop casual misuse, but it ships in the app, so treat it as a speed bump, not a secret. Validate every record and cap batch sizes.
 * **Reaching the server from the Quest:** the headset needs a public HTTPS address (for example a hosted service or a tunnel). Android blocks plain `http://` by default, so HTTPS avoids extra Unity settings.
 * **Game rule:** uploads are best effort. If the server is down, records stay in the local queue and in `grasps.jsonl`, and gameplay is unaffected.

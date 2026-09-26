@@ -22,6 +22,9 @@ namespace SortQuest
         [Tooltip("Optional overhead camera that saves what the robot would see at each grab. Found automatically if left empty.")]
         [SerializeField] private RobotCamera robotCamera;
 
+        [Tooltip("Found automatically if left empty. Records note which gripper was selected.")]
+        [SerializeField] private GripperCatalog catalog;
+
         [SerializeField] private bool logRecords = true;
 
         [Header("Debug gizmo (Scene view)")]
@@ -48,6 +51,10 @@ namespace SortQuest
             if (robotCamera == null)
             {
                 robotCamera = FindAnyObjectByType<RobotCamera>();
+            }
+            if (catalog == null)
+            {
+                catalog = FindAnyObjectByType<GripperCatalog>();
             }
             if (dataset == null)
             {
@@ -120,7 +127,8 @@ namespace SortQuest
 
             GripperGrasp local = HandGripperPose.ToLocal(worldGrasp, item.transform);
             string handName = hand.Handedness == Handedness.Left ? "left" : "right";
-            GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName);
+            GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName,
+                GripperCatalog.CurrentOrStandard(catalog).id, DetectInputDevice());
             ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
             if (image != null)
             {
@@ -172,6 +180,28 @@ namespace SortQuest
                           $"-> {bin}, {(record.IsGood ? "GOOD" : "not good")}. " +
                           $"{dataset.CountGood(item.ItemType)} good {record.item_type} grasps total.");
             }
+        }
+
+        /// <summary>
+        /// How the grab was made. With controller-driven hands, the "hand" joints come from the controllers,
+        /// not real fingers, so those grasps are labeled separately.
+        /// </summary>
+        private static string DetectInputDevice()
+        {
+            if (UnityEngine.XR.OpenXR.OpenXRRuntime.name.Contains("Simulator"))
+            {
+                return GraspRecord.InputSimulator;
+            }
+            OVRInput.Controller active = OVRInput.GetActiveController();
+            if ((active & OVRInput.Controller.Hands) != 0)
+            {
+                return GraspRecord.InputHands;
+            }
+            if ((active & OVRInput.Controller.Touch) != 0)
+            {
+                return GraspRecord.InputControllers;
+            }
+            return GraspRecord.InputUnknown;
         }
 
         /// <summary>Finds the hand behind a grab from the PointerEvent's interactor identifier.</summary>

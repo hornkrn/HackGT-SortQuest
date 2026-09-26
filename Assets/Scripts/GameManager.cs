@@ -8,6 +8,7 @@ namespace SortQuest
 {
     public enum GameState
     {
+        Menu,
         Intro,
         HumanRound,
         Training,
@@ -17,11 +18,12 @@ namespace SortQuest
     }
 
     /// <summary>
-    /// Runs one game: Intro, HumanRound (the player sorts and teaches), Training (recap), RobotRound
-    /// (the robot sorts alone), then lessons: TeachMe (the player demonstrates the robot's weakest item)
-    /// followed by a short robot retry on that item, repeated until the robot has mastered every item
-    /// or the lesson limit is reached. Then Results, and back to Intro for the next player.
-    /// Picking the weakest item each time is active learning: new data goes where the robot is worst.
+    /// Runs the game: Menu (pick a gripper, grab START), Intro, HumanRound (the player sorts and teaches),
+    /// Training (recap), RobotRound (the robot sorts alone), then lessons: TeachMe (the player demonstrates the
+    /// robot's weakest item) followed by a short robot retry on that item, repeated until the robot has mastered
+    /// every item or the lesson limit is reached. Then Results, where the player can keep improving or go back
+    /// to the menu. Picking the weakest item each time is active learning: new data goes where the robot is worst.
+    /// Without a MainMenu in the scene, the game starts at Intro and loops back to it.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -37,6 +39,9 @@ namespace SortQuest
         [SerializeField] private ScoreBoard scoreBoard;
         [SerializeField] private GraspDataset dataset;
         [SerializeField] private GraspAugmenter augmenter;
+        [SerializeField] private MainMenu menu;
+        [SerializeField] private GripperCatalog catalog;
+        [SerializeField] private GripperProgress progress;
 
         [Tooltip("Big text in front of the player that shows the current state and timer.")]
         [SerializeField] private TMP_Text statusText;
@@ -48,7 +53,8 @@ namespace SortQuest
         [SerializeField] private float robotRoundSeconds = 45f;
         [SerializeField] private float teachMeSeconds = 45f;
         [SerializeField] private float retrySeconds = 25f;
-        [SerializeField] private float resultsSeconds = 20f;
+        [Tooltip("Results stays up this long if nobody chooses, then returns to the menu (or Intro without one).")]
+        [SerializeField] private float resultsSeconds = 30f;
 
         [Header("Rules")]
         [Tooltip("TeachMe ends once the player makes this many good grasps of the item.")]
@@ -67,7 +73,10 @@ namespace SortQuest
         [Tooltip("Go to Results after this many lessons even if some items aren't mastered (0 = no limit).")]
         [SerializeField, Min(0)] private int maxLessons = 6;
 
-        [Tooltip("After Results, start again at Intro for the next player.")]
+        [Tooltip("KEEP IMPROVING after the robot is certified raises the mastery bar by this much (up to 95%).")]
+        [SerializeField, Range(0f, 0.5f)] private float keepImprovingBoost = 0.2f;
+
+        [Tooltip("Without a menu: after Results, start again at Intro for the next player.")]
         [SerializeField] private bool loopForNextPlayer = true;
 
         public event Action<GameState> StateChanged;
@@ -90,6 +99,9 @@ namespace SortQuest
         private int goodGraspsTaughtTotal;
         private bool finishRequested;
         private int lessonsGiven;
+        private int lessonLimit;
+        private float activeMasteryRate;
+        private bool progressRecorded;
 
         // Items taught in this game, in order, each listed once (for Results).
         private readonly List<ItemType> lessons = new List<ItemType>();
@@ -102,6 +114,8 @@ namespace SortQuest
         private readonly Dictionary<ItemType, int> goodGraspsByType = new Dictionary<ItemType, int>();
 
         private float Remaining => Mathf.Max(0f, CurrentDuration() - (Time.time - stateStartTime));
+        private bool HasMenu => menu != null && menu.Ready;
+        private GripperProfile Gripper => GripperCatalog.CurrentOrStandard(catalog);
 
         private void Awake()
         {
@@ -110,6 +124,11 @@ namespace SortQuest
             if (scoreBoard == null) scoreBoard = FindAnyObjectByType<ScoreBoard>();
             if (dataset == null) dataset = FindAnyObjectByType<GraspDataset>();
             if (augmenter == null) augmenter = FindAnyObjectByType<GraspAugmenter>();
+            if (menu == null) menu = FindAnyObjectByType<MainMenu>();
+            if (catalog == null) catalog = FindAnyObjectByType<GripperCatalog>();
+            if (progress == null) progress = FindAnyObjectByType<GripperProgress>();
+            activeMasteryRate = masteryRate;
+            lessonLimit = maxLessons;
             if (spawner == null)
             {
                 Debug.LogError("[SortQuest] GameManager needs a TrashSpawner.", this);
@@ -122,6 +141,7 @@ namespace SortQuest
             if (dataset != null) dataset.RecordAdded += HandleRecordAdded;
             if (robot != null) robot.AttemptFinished += HandleRobotAttempt;
             if (augmenter != null) augmenter.Practiced += HandlePracticed;
+            if (catalog != null) catalog.Changed += HandleGripperChanged;
         }
 
         private void OnDisable()
@@ -129,11 +149,17 @@ namespace SortQuest
             if (dataset != null) dataset.RecordAdded -= HandleRecordAdded;
             if (robot != null) robot.AttemptFinished -= HandleRobotAttempt;
             if (augmenter != null) augmenter.Practiced -= HandlePracticed;
+            if (catalog != null) catalog.Changed -= HandleGripperChanged;
+        }
+
+        private void HandleGripperChanged(GripperProfile profile)
+        {
+            RefreshStatus();
         }
 
         private void Start()
         {
-            SetState(GameState.Intro);
+            SetState(HasMenu ? GameState.Menu : GameState.Intro);
         }
 
         private void Update()
@@ -141,6 +167,8 @@ namespace SortQuest
             bool timeUp = Remaining <= 0f;
             switch (State)
             {
+                case GameState.Menu:
+                    break; // Waits for START.
                 case GameState.Intro:
                     if (timeUp) SetState(GameState.HumanRound);
                     break;
@@ -161,13 +189,59 @@ namespace SortQuest
                     }
                     break;
                 case GameState.Results:
-                    if (timeUp && loopForNextPlayer) SetState(GameState.Intro);
+                    if (timeUp)
+                    {
+                        if (HasMenu) SetState(GameState.Menu);
+                        else if (loopForNextPlayer) SetState(GameState.Intro);
+                    }
                     break;
             }
 
             if (Time.time >= nextStatusRefresh)
             {
                 RefreshStatus();
+            }
+        }
+
+        /// <summary>From the menu: start a game with the selected gripper.</summary>
+        [ContextMenu("Start game (from the menu)")]
+        public void StartGame()
+        {
+            if (State == GameState.Menu)
+            {
+                SetState(GameState.Intro);
+            }
+        }
+
+        /// <summary>
+        /// From Results: more lessons with the same gripper. If the robot was certified, the mastery bar goes up,
+        /// so the extra lessons still have something to improve.
+        /// </summary>
+        [ContextMenu("Keep improving (from Results)")]
+        public void KeepImproving()
+        {
+            if (State != GameState.Results)
+            {
+                return;
+            }
+            if (Certified)
+            {
+                activeMasteryRate = Mathf.Min(0.95f, activeMasteryRate + keepImprovingBoost);
+            }
+            Certified = false;
+            finishRequested = false;
+            lessonLimit = lessonsGiven + Mathf.Max(1, maxLessons);
+            IsRetry = true;
+            SetState(GameState.TeachMe);
+        }
+
+        /// <summary>From Results (or anytime): back to the menu to pick a gripper.</summary>
+        [ContextMenu("Back to menu")]
+        public void BackToMenu()
+        {
+            if (HasMenu)
+            {
+                SetState(GameState.Menu);
             }
         }
 
@@ -208,8 +282,15 @@ namespace SortQuest
 
             switch (state)
             {
+                case GameState.Menu:
+                    StopEverything();
+                    break;
+
                 case GameState.Intro:
                     StopEverything();
+                    activeMasteryRate = masteryRate;
+                    lessonLimit = maxLessons;
+                    progressRecorded = false;
                     TeachItem = null;
                     IsRetry = false;
                     Certified = false;
@@ -268,6 +349,12 @@ namespace SortQuest
 
                 case GameState.Results:
                     StopEverything();
+                    if (progress != null)
+                    {
+                        // One game per trip through Intro; extra lessons after KEEP IMPROVING update the same game.
+                        progress.Record(Gripper.id, Certified, CountMastered(), ItemCount, !progressRecorded);
+                        progressRecorded = true;
+                    }
                     break;
             }
         }
@@ -372,7 +459,7 @@ namespace SortQuest
                 Certified = true;
                 return GameState.Results;
             }
-            if (finishRequested || (maxLessons > 0 && lessonsGiven >= maxLessons))
+            if (finishRequested || (lessonLimit > 0 && lessonsGiven >= lessonLimit))
             {
                 return GameState.Results;
             }
@@ -393,7 +480,7 @@ namespace SortQuest
         {
             Tally tally = LatestTally(type);
             return tally != null && tally.Attempts >= masteryMinAttempts &&
-                   (float)tally.Successes / tally.Attempts >= masteryRate;
+                   (float)tally.Successes / tally.Attempts >= activeMasteryRate;
         }
 
         private bool AllMastered()
@@ -417,17 +504,24 @@ namespace SortQuest
         /// <summary>
         /// The next item to teach: not yet mastered, preferring items not taught yet in this game, then the
         /// lowest latest success rate (items the robot hasn't tried count as 50%), then fewer good grasps.
+        /// If everything is mastered (KEEP IMPROVING), the weakest item overall.
         /// </summary>
         private ItemType PickTeachItem()
         {
+            ItemType best = PickTeachItem(skipMastered: true, out bool found);
+            return found ? best : PickTeachItem(skipMastered: false, out _);
+        }
+
+        private ItemType PickTeachItem(bool skipMastered, out bool found)
+        {
             ItemType best = ItemType.AluminumCan;
-            bool found = false;
+            found = false;
             bool bestTaught = true;
             float bestRate = float.MaxValue;
             int bestGood = int.MaxValue;
             foreach (ItemType type in (ItemType[])Enum.GetValues(typeof(ItemType)))
             {
-                if (IsMastered(type))
+                if (skipMastered && IsMastered(type))
                 {
                     continue;
                 }
@@ -478,10 +572,24 @@ namespace SortQuest
             string title;
             switch (State)
             {
+                case GameState.Menu:
+                    title = "CHOOSE A GRIPPER";
+                    body.AppendLine("Grab a gripper block on the table to select it, then grab START.");
+                    body.AppendLine($"Selected: {Gripper.displayName} ({Gripper.description})");
+                    if (progress != null)
+                    {
+                        body.AppendLine($"This gripper: {progress.Badge(Gripper.id)}");
+                    }
+                    if (augmenter != null && augmenter.PendingGrasps > 0)
+                    {
+                        body.Append($"The robot is studying {augmenter.PendingGrasps} grasps for this gripper...");
+                    }
+                    break;
+
                 case GameState.Intro:
                     title = "SORTQUEST";
                     body.AppendLine("Sort the trash into the right bins with your hands.");
-                    body.AppendLine("Every good grab teaches the recycling robot.");
+                    body.AppendLine($"Every good grab teaches the robot's {Gripper.displayName.ToLowerInvariant()} gripper.");
                     body.Append($"Starting in {Mathf.CeilToInt(Remaining)}");
                     break;
 
@@ -512,14 +620,14 @@ namespace SortQuest
                         : "Watch it use what you taught it.");
                     body.AppendLine($"{robotRoundSuccesses} of {robotRoundAttempts} grasps worked");
                     body.Append(IsRetry
-                        ? $"Mastered once {masteryRate * 100f:F0}% of its grasps work"
+                        ? $"Mastered once {activeMasteryRate * 100f:F0}% of its grasps work"
                         : $"Mastered {CountMastered()} of {ItemCount} items so far");
                     break;
 
                 case GameState.TeachMe:
                     string item = TeachItem.HasValue ? TrashTypes.DisplayName(TeachItem.Value).ToLowerInvariant() : "item";
                     Tally latest = TeachItem.HasValue ? LatestTally(TeachItem.Value) : null;
-                    string limit = maxLessons > 0 ? $" of up to {maxLessons}" : "";
+                    string limit = lessonLimit > 0 ? $" of up to {lessonLimit}" : "";
                     title = $"TEACH ME  {time}";
                     body.AppendLine($"Lesson {lessonsGiven}{limit}. Robot has mastered {CountMastered()} of {ItemCount} items.");
                     body.AppendLine(latest == null || latest.Attempts == 0
@@ -531,6 +639,12 @@ namespace SortQuest
                 default:
                     title = Certified ? "ROBOT CERTIFIED!" : "RESULTS";
                     AppendResults(body);
+                    if (HasMenu)
+                    {
+                        body.AppendLine(Certified
+                            ? "Grab KEEP IMPROVING to raise the bar, or MENU to try another gripper."
+                            : "Grab KEEP IMPROVING for more lessons, or MENU to finish.");
+                    }
                     break;
             }
             statusText.text = $"{title}\n<size=55%>{body.ToString().TrimEnd()}</size>";
@@ -538,6 +652,7 @@ namespace SortQuest
 
         private void AppendResults(StringBuilder body)
         {
+            body.AppendLine($"Gripper: {Gripper.displayName}");
             if (scoreBoard != null)
             {
                 body.AppendLine($"Your score: {scoreBoard.Score} ({scoreBoard.Correct} correct, " +

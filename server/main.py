@@ -19,6 +19,10 @@ load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 ItemType = Literal['aluminum_can', 'plastic_bottle', 'cardboard_box', 'crumpled_paper', 'battery_aa', 'power_bank']
 Source = Literal['human', 'augmented', 'robot']
 Bin = Literal['metal', 'plastic', 'paper', 'hazardous']
+InputDevice = Literal['hands', 'controllers', 'simulator', 'unknown', 'none']
+GRIPPER_PATTERN = r'^[a-z0-9_]{1,40}$'
+# Records sent before grippers existed were all for the standard two-finger gripper.
+STANDARD_GRIPPER = 'parallel_100mm'
 
 
 class Model(BaseModel):
@@ -61,6 +65,10 @@ class GraspRecord(Model):
     item_type: ItemType
     correct_bin: Bin
     hand: Literal['left', 'right', 'gripper']
+    # Added in schema_version 2. Defaults keep older game builds working.
+    gripper: str = Field(default=STANDARD_GRIPPER, pattern=GRIPPER_PATTERN)
+    input_device: InputDevice = 'unknown'
+    schema_version: int = Field(default=1, ge=1, le=100)
     grasp: Grasp
     item_pose_world: Pose
     outcome: Outcome
@@ -145,11 +153,15 @@ def get_grasps(
     item_type: Optional[ItemType] = None,
     good: Optional[bool] = None,
     source: Optional[str] = None,
+    gripper: Optional[str] = Query(default=None, pattern=GRIPPER_PATTERN),
     limit: int = Query(default=500, ge=1, le=1000),
 ):
     filters = {}
     if item_type is not None:
         filters['item_type'] = item_type
+    if gripper is not None:
+        # Documents stored before the gripper field existed belong to the standard gripper.
+        filters['gripper'] = {'$in': [gripper, None]} if gripper == STANDARD_GRIPPER else gripper
     if good is True:
         filters.update({'outcome.correct': True, 'outcome.dropped': False})
     elif good is False:
@@ -166,10 +178,13 @@ def get_grasps(
 @app.get('/stats', dependencies=[Depends(require_api_key)])
 def stats():
     good = {'$and': [{'$eq': ['$outcome.correct', True]}, {'$eq': ['$outcome.dropped', False]}]}
+    gripper = {'$ifNull': ['$gripper', STANDARD_GRIPPER]}
     result = next(app.state.db.grasps.aggregate([{'$facet': {
-        'counts': [{'$group': {'_id': {'item_type': '$item_type', 'source': '$source'}, 'total': {'$sum': 1}, 'good': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id.item_type': 1, '_id.source': 1}}],
+        'counts': [{'$group': {'_id': {'item_type': '$item_type', 'source': '$source', 'gripper': gripper}, 'total': {'$sum': 1}, 'good': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id.item_type': 1, '_id.source': 1, '_id.gripper': 1}}],
         'robot_daily': [{'$match': {'source': 'robot'}}, {'$group': {'_id': {'$dateToString': {'format': '%Y-%m-%d', 'date': '$created_at', 'timezone': 'UTC'}}, 'attempts': {'$sum': 1}, 'successes': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id': 1}}],
+        'robot_by_gripper': [{'$match': {'source': 'robot'}}, {'$group': {'_id': gripper, 'attempts': {'$sum': 1}, 'successes': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id': 1}}],
     }}], maxTimeMS=5000))
     counts = [{**row['_id'], 'total': row['total'], 'good': row['good']} for row in result['counts']]
     daily = [{'date': row['_id'], 'attempts': row['attempts'], 'successes': row['successes'], 'success_rate': row['successes'] / row['attempts']} for row in result['robot_daily']]
-    return {'total': sum(row['total'] for row in counts), 'counts': counts, 'robot_daily': daily}
+    by_gripper = [{'gripper': row['_id'], 'attempts': row['attempts'], 'successes': row['successes'], 'success_rate': row['successes'] / row['attempts']} for row in result['robot_by_gripper']]
+    return {'total': sum(row['total'] for row in counts), 'counts': counts, 'robot_daily': daily, 'robot_by_gripper': by_gripper}

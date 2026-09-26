@@ -437,6 +437,7 @@ MonoBehaviour:
   dataset: {fileID: 39390844}
   spawner: {fileID: 193552011}
   robotCamera: {fileID: 1736045744}
+  catalog: {fileID: 0}
   logRecords: 1
   drawLastGrasp: 1
 --- !u!114 &39390844
@@ -943,17 +944,10 @@ MonoBehaviour:
   source: 0
   recorder: {fileID: 0}
   robot: {fileID: 0}
+  catalog: {fileID: 0}
   material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
   color: {r: 0.3, g: 0.9, b: 1, a: 0.45}
   lingerSeconds: 1.5
-  shape:
-    maxOpening: 0.1
-    fingerLength: 0.06
-    fingerWidth: 0.025
-    fingerThickness: 0.012
-    fingertipPastGrasp: 0.01
-    palmThickness: 0.02
-    touchSkin: 0.002
 --- !u!4 &109302600
 Transform:
   m_ObjectHideFlags: 0
@@ -1655,6 +1649,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SortQuest.ConfidenceBars
   policy: {fileID: 0}
   dataset: {fileID: 0}
+  catalog: {fileID: 0}
   material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
   labelWidth: 0.6
   barWidth: 0.45
@@ -2987,17 +2982,10 @@ MonoBehaviour:
   source: 1
   recorder: {fileID: 0}
   robot: {fileID: 0}
+  catalog: {fileID: 0}
   material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
   color: {r: 1, g: 0.55, b: 0.1, a: 0.45}
   lingerSeconds: 1.5
-  shape:
-    maxOpening: 0.1
-    fingerLength: 0.06
-    fingerWidth: 0.025
-    fingerThickness: 0.012
-    fingertipPastGrasp: 0.01
-    palmThickness: 0.02
-    touchSkin: 0.002
 --- !u!4 &544321501
 Transform:
   m_ObjectHideFlags: 0
@@ -3637,6 +3625,140 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &603473766
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 603473768}
+  - component: {fileID: 603473767}
+  m_Layer: 0
+  m_Name: Grippers
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &603473767
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 603473766}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0a5915d6f77ed74c8e6daaf65345846, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GripperCatalog
+  profiles:
+  - id: parallel_100mm
+    displayName: Standard
+    description: Two-finger, 100 mm
+    kind: 0
+    parallel:
+      maxOpening: 0.1
+      fingerLength: 0.06
+      fingerWidth: 0.025
+      fingerThickness: 0.012
+      fingertipPastGrasp: 0.01
+      palmThickness: 0.02
+      touchSkin: 0.002
+    suction:
+      cupDiameter: 0.04
+      sealRingSamples: 8
+      maxSurfaceDeviation: 0.004
+      maxNormalDeviationDeg: 15
+      maxApproachTiltDeg: 20
+      stemLength: 0.08
+      touchSkin: 0.002
+    approachDistance: 0.12
+    accentColor: {r: 1, g: 0.55, b: 0.1, a: 1}
+  - id: parallel_85mm
+    displayName: Compact
+    description: Two-finger, 85 mm
+    kind: 0
+    parallel:
+      maxOpening: 0.085
+      fingerLength: 0.045
+      fingerWidth: 0.025
+      fingerThickness: 0.012
+      fingertipPastGrasp: 0.01
+      palmThickness: 0.02
+      touchSkin: 0.002
+    suction:
+      cupDiameter: 0.04
+      sealRingSamples: 8
+      maxSurfaceDeviation: 0.004
+      maxNormalDeviationDeg: 15
+      maxApproachTiltDeg: 20
+      stemLength: 0.08
+      touchSkin: 0.002
+    approachDistance: 0.12
+    accentColor: {r: 0.1, g: 0.8, b: 0.8, a: 1}
+  - id: parallel_140mm
+    displayName: Wide
+    description: Two-finger, 140 mm
+    kind: 0
+    parallel:
+      maxOpening: 0.14
+      fingerLength: 0.07
+      fingerWidth: 0.03
+      fingerThickness: 0.012
+      fingertipPastGrasp: 0.01
+      palmThickness: 0.02
+      touchSkin: 0.002
+    suction:
+      cupDiameter: 0.04
+      sealRingSamples: 8
+      maxSurfaceDeviation: 0.004
+      maxNormalDeviationDeg: 15
+      maxApproachTiltDeg: 20
+      stemLength: 0.08
+      touchSkin: 0.002
+    approachDistance: 0.12
+    accentColor: {r: 0.6, g: 0.4, b: 1, a: 1}
+  - id: suction_40mm
+    displayName: Suction
+    description: Suction cup, 40 mm
+    kind: 1
+    parallel:
+      maxOpening: 0.1
+      fingerLength: 0.06
+      fingerWidth: 0.025
+      fingerThickness: 0.012
+      fingertipPastGrasp: 0.01
+      palmThickness: 0.02
+      touchSkin: 0.002
+    suction:
+      cupDiameter: 0.04
+      sealRingSamples: 8
+      maxSurfaceDeviation: 0.004
+      maxNormalDeviationDeg: 15
+      maxApproachTiltDeg: 20
+      stemLength: 0.08
+      touchSkin: 0.002
+    approachDistance: 0.12
+    accentColor: {r: 0.3, g: 0.9, b: 0.4, a: 1}
+  defaultProfileId: parallel_100mm
+--- !u!4 &603473768
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 603473766}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &648891480
 GameObject:
   m_ObjectHideFlags: 0
@@ -3779,6 +3901,59 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1234406856}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &698568985
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 698568987}
+  - component: {fileID: 698568986}
+  m_Layer: 0
+  m_Name: MainMenu
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &698568986
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 698568985}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6ee9a20ab2dd1045ab8dacd237c59f0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.MainMenu
+  blockPrefab: {fileID: 851821432572442755, guid: db23ac80d82fe5b4f9293447f694a3a7, type: 3}
+  catalog: {fileID: 0}
+  game: {fileID: 0}
+  progress: {fileID: 0}
+  tableMaterial: {fileID: 2100000, guid: 29608f2fdee7940409423faaa2ca1535, type: 2}
+  spacing: 0.16
+  startColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
+  keepImprovingColor: {r: 0.25, g: 0.6, b: 1, a: 1}
+  backToMenuColor: {r: 0.85, g: 0.3, b: 0.3, a: 1}
+--- !u!4 &698568987
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 698568985}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.9, z: 0.28}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &738685773
 GameObject:
@@ -8629,6 +8804,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1738201055}
   - component: {fileID: 1738201054}
+  - component: {fileID: 1738201056}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -8653,6 +8829,9 @@ MonoBehaviour:
   scoreBoard: {fileID: 903874098}
   dataset: {fileID: 39390844}
   augmenter: {fileID: 0}
+  menu: {fileID: 698568986}
+  catalog: {fileID: 0}
+  progress: {fileID: 0}
   statusText: {fileID: 1475472505}
   introSeconds: 10
   humanRoundSeconds: 60
@@ -8666,6 +8845,7 @@ MonoBehaviour:
   masteryRate: 0.6
   masteryMinAttempts: 2
   maxLessons: 6
+  keepImprovingBoost: 0.2
   loopForNextPlayer: 1
 --- !u!4 &1738201055
 Transform:
@@ -8682,6 +8862,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1738201056
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738201053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4343b9fa5e1b1af4cb8507d1355b4e9d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GripperProgress
+  fileName: progress.json
 --- !u!1 &1738273588
 GameObject:
   m_ObjectHideFlags: 0
@@ -9165,11 +9358,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GraspAugmenter
   dataset: {fileID: 39390844}
   spawner: {fileID: 193552011}
-  robot: {fileID: 2006899603}
+  catalog: {fileID: 0}
   variationsPerGrasp: 12
   positionJitter: 0.01
   angleJitter: 10
   checksPerFrame: 4
+  backfillPerItem: 10
   sandboxOrigin: {x: 0, y: -100, z: 0}
   logResults: 1
 --- !u!4 &1815988802
@@ -9913,6 +10107,7 @@ MonoBehaviour:
   visual: {fileID: 2006899607}
   arm: {fileID: 237168434}
   robotCamera: {fileID: 1736045744}
+  catalog: {fileID: 0}
   runOnStart: 1
   pickZoneStart: 0.6
   moveSpeed: 0.8
@@ -9943,8 +10138,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GraspPolicy
   dataset: {fileID: 39390844}
+  catalog: {fileID: 0}
   positionTolerance: 0.02
   angleTolerance: 20
+  suctionPositionTolerance: 0.015
+  suctionAngleTolerance: 20
   randomRollRange: 30
 --- !u!54 &2006899605
 Rigidbody:
@@ -10004,6 +10202,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GripperVisual
   robot: {fileID: 0}
+  catalog: {fileID: 0}
   bodyMaterial: {fileID: 2100000, guid: 29608f2fdee7940409423faaa2ca1535, type: 2}
   metalMaterial: {fileID: 2100000, guid: 71a42db31e458d14c99ab426022fd167, type: 2}
   padMaterial: {fileID: 2100000, guid: b31a4181d5ab827419949e87b502c876, type: 2}
@@ -10114,3 +10313,5 @@ SceneRoots:
   - {fileID: 1736045746}
   - {fileID: 923126202}
   - {fileID: 101844912}
+  - {fileID: 603473768}
+  - {fileID: 698568987}
