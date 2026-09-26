@@ -31,6 +31,9 @@ namespace SortQuest
         public event Action<TrashItem> ItemSpawned;
 
         public bool Spawning { get; set; }
+
+        /// <summary>When set, only this item type spawns.</summary>
+        public ItemType? OnlyType { get; set; }
         public IReadOnlyList<TrashItem> ActiveItems => activeItems;
 
         private readonly List<TrashItem> activeItems = new List<TrashItem>();
@@ -68,7 +71,7 @@ namespace SortQuest
 
         public TrashItem SpawnItem()
         {
-            TrashItem prefab = itemPrefabs[Random.Range(0, itemPrefabs.Length)];
+            TrashItem prefab = PickPrefab();
             if (prefab == null)
             {
                 return null;
@@ -95,16 +98,37 @@ namespace SortQuest
             return item;
         }
 
+        /// <summary>Removes spawned items, except any a person is holding right now.</summary>
         public void ClearItems()
         {
-            foreach (TrashItem item in activeItems)
+            activeItems.RemoveAll(item => item == null);
+            for (int i = activeItems.Count - 1; i >= 0; i--)
             {
-                if (item != null)
+                TrashItem item = activeItems[i];
+                if (item.State == TrashItemState.Held && !item.LastHeldByRobot)
                 {
-                    Destroy(item.gameObject);
+                    continue;
+                }
+                Destroy(item.gameObject);
+                activeItems.RemoveAt(i);
+            }
+        }
+
+        private TrashItem PickPrefab()
+        {
+            if (!OnlyType.HasValue)
+            {
+                return itemPrefabs[Random.Range(0, itemPrefabs.Length)];
+            }
+            var matches = new List<TrashItem>();
+            foreach (TrashItem prefab in itemPrefabs)
+            {
+                if (prefab != null && prefab.ItemType == OnlyType.Value)
+                {
+                    matches.Add(prefab);
                 }
             }
-            activeItems.Clear();
+            return matches.Count > 0 ? matches[Random.Range(0, matches.Count)] : null;
         }
 
         private void HandleMissed(TrashItem item)

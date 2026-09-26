@@ -12,7 +12,7 @@ namespace SortQuest
 {
     /// <summary>
     /// Menu items that build the milestone 1 scene objects and trash item prefabs, add grasp recording (milestone 2),
-    /// and add the robot gripper (milestone 3).
+    /// add the robot gripper (milestone 3), and add the game manager (milestone 4).
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -224,6 +224,56 @@ namespace SortQuest
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             Debug.Log($"[SortQuest] Robot gripper added and scene saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Add Game Manager (Milestone 4)")]
+        public static void AddGameManager()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            TrashSpawner spawner = Object.FindAnyObjectByType<TrashSpawner>();
+            RobotGripper robot = Object.FindAnyObjectByType<RobotGripper>();
+            if (spawner == null || robot == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Run the Milestone 1, 2, and 3 menu items first.", "OK");
+                return;
+            }
+
+            GameObject go = GetOrCreate("GameManager", null, null, out _);
+            GameManager manager = GetOrAdd<GameManager>(go, out _);
+            SetIfEmpty(manager, "spawner", spawner);
+            SetIfEmpty(manager, "robot", robot);
+            SetIfEmpty(manager, "scoreBoard", Object.FindAnyObjectByType<ScoreBoard>());
+            SetIfEmpty(manager, "dataset", Object.FindAnyObjectByType<GraspDataset>());
+
+            if (HasTmpEssentials())
+            {
+                GameObject status = GetOrCreate("GameStatus", null, null, out bool statusCreated);
+                TextMeshPro text = GetOrAdd<TextMeshPro>(status, out bool textAdded);
+                GetOrAdd<Billboard>(status, out _);
+                if (statusCreated || textAdded)
+                {
+                    status.transform.position = new Vector3(0f, 2.2f, 1.6f);
+                    text.rectTransform.sizeDelta = new Vector2(3f, 0.9f);
+                    text.fontSize = 1.3f;
+                    text.alignment = TextAlignmentOptions.Center;
+                    text.text = "SORTQUEST";
+                }
+                SetIfEmpty(manager, "statusText", text);
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log($"[SortQuest] Game manager added and scene saved ({scene.path}).");
         }
 
         private static Transform BuildRobotPart(Transform parent, string name, Material material)

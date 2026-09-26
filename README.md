@@ -26,8 +26,8 @@ Robots learn to grasp objects from examples, and good examples are slow and expe
 |---|---|---|
 | 1 | Conveyor belt, trash items, spawner, sorting bins with score | Done |
 | 2 | Hand to gripper conversion, grasp recording, local grasp dataset | Done |
-| 3 | Grasp policy and a floating robot gripper | Planned |
-| 4 | Game flow: intro, human round, training, robot round, teach me, results | Planned |
+| 3 | Grasp policy and a floating robot gripper that sorts items near the end of the belt | Done |
+| 4 | Game flow: intro, human round, training, robot round, teach me (with a robot retry), results | Done |
 | 5 | Learning visuals (accuracy chart, confidence bars, ghost grippers), data augmentation, upload to a server | Planned |
 
 The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a sign listing what goes in it, and the item in the player's hand shows its name.
@@ -47,7 +47,7 @@ The six starting items are an aluminum can, a plastic bottle, a cardboard box, c
    * **Meta Quest Link:** a Quest headset connected to the PC by USB cable or Air Link.
    * **Meta XR Simulator:** no headset needed. Turn on its runtime toggle, press Play, then set both inputs to Hand. Released items drop straight down in the simulator because its hands swing with the view.
 
-To test in a scene of your own without editing the main scene, create and save a new scene, then run **SortQuest > Build Milestone 1 Scene** followed by **SortQuest > Add Grasp Recording (Milestone 2)**. Both are safe to run more than once.
+To test in a scene of your own without editing the main scene, create and save a new scene, then run the **SortQuest** menu items in order: **Build Milestone 1 Scene**, **Add Grasp Recording (Milestone 2)**, **Add Robot Gripper (Milestone 3)**, and **Add Game Manager (Milestone 4)**. Each is safe to run more than once.
 
 ## Grasp data
 

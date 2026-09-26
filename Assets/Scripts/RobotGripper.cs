@@ -76,6 +76,12 @@ namespace SortQuest
         public event Action<Attempt> AttemptFinished;
 
         public bool Active { get; set; }
+
+        public float PickZoneStart
+        {
+            get => pickZoneStart;
+            set => pickZoneStart = Mathf.Clamp01(value);
+        }
         public int Attempts { get; private set; }
         public int Successes { get; private set; }
         public float Accuracy => Attempts == 0 ? 0f : (float)Successes / Attempts;
@@ -90,6 +96,9 @@ namespace SortQuest
         private readonly HashSet<TrashItem> attempted = new HashSet<TrashItem>();
         private readonly Collider[] overlapBuffer = new Collider[16];
         private readonly WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+        private Coroutine runRoutine;
+        private TrashItem heldItem;
+        private FixedJoint heldJoint;
 
         private void Awake()
         {
@@ -119,7 +128,41 @@ namespace SortQuest
         {
             bins = FindObjectsByType<SortingBin>(FindObjectsSortMode.None);
             UpdateStatus();
-            StartCoroutine(Run());
+            if (runRoutine == null)
+            {
+                runRoutine = StartCoroutine(Run());
+            }
+        }
+
+        /// <summary>Stops whatever the robot is doing, lets go of any item, and starts fresh.</summary>
+        public void ResetRobot()
+        {
+            if (!isActiveAndEnabled)
+            {
+                return;
+            }
+            StopAllCoroutines();
+            if (heldJoint != null)
+            {
+                Destroy(heldJoint);
+            }
+            if (heldItem != null)
+            {
+                heldItem.EndRobotHold();
+            }
+            heldJoint = null;
+            heldItem = null;
+            OpenFingers();
+            runRoutine = StartCoroutine(Run());
+        }
+
+        /// <summary>Clears the accuracy count, for example at the start of a new game.</summary>
+        public void ResetStats()
+        {
+            Attempts = 0;
+            Successes = 0;
+            lastResult = "Waiting for trash";
+            UpdateStatus();
         }
 
         private void Update()
@@ -229,6 +272,8 @@ namespace SortQuest
             item.BeginRobotHold();
             FixedJoint joint = item.gameObject.AddComponent<FixedJoint>();
             joint.connectedBody = body;
+            heldItem = item;
+            heldJoint = joint;
 
             yield return StartCoroutine(MoveTo(new Vector3(body.position.x, carryHeight, body.position.z), body.rotation));
             SortingBin bin = FindBin(item.CorrectBin);
@@ -248,6 +293,8 @@ namespace SortQuest
             {
                 item.EndRobotHold();
             }
+            heldItem = null;
+            heldJoint = null;
             OpenFingers();
             yield return new WaitForSeconds(0.3f);
         }
