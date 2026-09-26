@@ -735,7 +735,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ee92377a8e0c873458b71a94a80f3394, type: 3}
   m_Name: ApiLayersFeature Standalone
   m_EditorClassIdentifier: Unity.XR.OpenXR::UnityEngine.XR.OpenXR.Features.ApiLayersFeature
-  m_enabled: 1
+  m_enabled: 0
   nameUi: API Layers
   version: 1.0.0
   featureIdInternal: com.unity.openxr.feature.apilayers
@@ -1237,7 +1237,9 @@ MonoBehaviour:
   m_Name: Standalone
   m_EditorClassIdentifier: Unity.XR.OpenXR::UnityEngine.XR.OpenXR.OpenXRSettings
   features:
+  - {fileID: -4026206042894518226}
   - {fileID: 6450204842561679401}
+  - {fileID: -3415878153050837161}
   - {fileID: 4946795273880488486}
   - {fileID: 1632964091711138927}
   - {fileID: 2623021150481969869}
@@ -1260,14 +1262,12 @@ MonoBehaviour:
   - {fileID: -2224167977278585450}
   - {fileID: -1857095854479219677}
   - {fileID: -7973157167167111079}
+  - {fileID: 3885032595332386107}
   - {fileID: 2814436593352662144}
   - {fileID: 3506844508933544837}
   - {fileID: -3075999548376799528}
   - {fileID: -4031763339891826760}
   - {fileID: -6545926720378418482}
-  - {fileID: -4026206042894518226}
-  - {fileID: -3415878153050837161}
-  - {fileID: 3885032595332386107}
   customLoaderName: 
   m_renderMode: 1
   m_latencyOptimization: 0
@@ -1295,7 +1295,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3aced3429e5911458f4da2dac9d0f29, type: 3}
   m_Name: MetaHandTrackingAim Android
   m_EditorClassIdentifier: Unity.XR.Hands::UnityEngine.XR.Hands.OpenXR.MetaHandTrackingAim
-  m_enabled: 0
+  m_enabled: 1
   nameUi: Meta Hand Tracking Aim
   version: 0.0.1
   featureIdInternal: com.unity.openxr.feature.input.metahandtrackingaim
@@ -1662,7 +1662,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3aced3429e5911458f4da2dac9d0f29, type: 3}
   m_Name: MetaHandTrackingAim Standalone
   m_EditorClassIdentifier: Unity.XR.Hands::UnityEngine.XR.Hands.OpenXR.MetaHandTrackingAim
-  m_enabled: 0
+  m_enabled: 1
   nameUi: Meta Hand Tracking Aim
   version: 0.0.1
   featureIdInternal: com.unity.openxr.feature.input.metahandtrackingaim
