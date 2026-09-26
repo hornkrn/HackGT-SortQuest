@@ -60,7 +60,7 @@ We haven't found another project that combines all of these:
 | 3 | Grasp policy and a floating robot gripper that sorts items near the end of the belt | Done |
 | 4 | Game flow: intro, human round, training, robot round, teach me (with a robot retry), results | Done |
 | 5a | Learning visuals (accuracy chart, confidence bars, ghost grippers, grab dots) and simulation checked grasp augmentation | Done |
-| 5b | Upload grasps to a FastAPI and MongoDB Atlas server (see Developer notes) | Planned |
+| 5b | FastAPI/MongoDB uploads and Unity LAN client | Implemented; APK testing pending |
 | 6 | Robot camera that saves color, depth, and mask images with each grasp; industrial style gripper; display arm with a real reach limit | Done |
 
 The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a sign listing what goes in it, and the item in the player's hand shows its name.
@@ -69,7 +69,7 @@ The six starting items are an aluminum can, a plastic bottle, a cardboard box, c
 
 * Unity 6.3 LTS (6000.3.25f1) with the Universal Render Pipeline, targeting Android for the Quest
 * Meta XR SDK v207 (Interaction SDK for hand tracking and grabbing) on OpenXR
-* Planned: a Python FastAPI server with MongoDB Atlas in `/server` for collecting grasps from many players
+* Python FastAPI server with MongoDB Atlas in `/server`, with a persistent Unity upload queue
 
 ## Getting started
 
@@ -129,11 +129,11 @@ Before collecting real data on the headset, move any `grasps.jsonl` recorded in 
 
 ## Developer notes: server and MongoDB
 
-This section is for whoever builds the server (milestone 5b). The game side is finished up to the point where records are saved locally; nothing in Unity talks to a network yet.
+The API and Unity networking scripts are implemented. For a fresh clone, Windows/macOS setup, API keys, and Quest LAN configuration, follow [server/README.md](server/README.md). See [test results and remaining hardware checks](server/TEST_RESULTS.md). Run **SortQuest → Configure LAN API** in Unity and save the scene before building; the shared scene has not been wired automatically.
 
 ### Why the game goes through an API
 
-Unity never connects to MongoDB directly. The MongoDB connection string would have to ship inside the Quest app, where anyone could extract it and read or delete the database. Instead, the game sends plain JSON over HTTPS to a small FastAPI server in `/server`, and only the server holds the connection string, in a gitignored `.env` file (`MONGODB_URI=...`). This also lets the server validate records before storing them.
+Unity never connects to MongoDB directly. The MongoDB connection string would have to ship inside the Quest app, where anyone could extract it and read or delete the database. Instead, the game sends JSON over HTTP on a trusted LAN (HTTPS for public deployments) to a small FastAPI server in `/server`, and only the server holds the connection string, in a gitignored `.env` file (`MONGODB_URI=...`). This also lets the server validate records before storing them.
 
 ### Where the Unity code touches the data
 
@@ -141,7 +141,7 @@ Unity never connects to MongoDB directly. The MongoDB connection string would ha
 |---|---|---|
 | `Assets/Scripts/GraspRecord.cs` | Defines the JSON record (see Grasp data above) and helpers that create human, robot, and augmented records. Each record gets a unique `record_id` when it is created | Nothing. Upload the record as is; a retried upload carries the same `record_id`, so the server can skip duplicates |
 | `Assets/Scripts/GraspDataset.cs` | Keeps all records in memory, appends each one to `grasps.jsonl`, and raises `RecordAdded` for every new record. On load, it gives older records without a `record_id` one and saves the file once | Nothing, apart from optionally merging records downloaded from the server (skip any `record_id` already present) |
-| `Assets/Scripts/DataUploader.cs` | Does not exist yet | New script: listens to `GraspDataset.RecordAdded`, adds each record to a local pending queue file, and sends batches in the background with `UnityWebRequest`. On failure it keeps the queue and retries later. The game must never wait on it |
+| `Assets/Scripts/DataUploader.cs` | Implemented; attach through the setup menu | Listens to `GraspDataset.RecordAdded`, adds each record to a local pending queue file, and sends batches in the background with `UnityWebRequest`. On failure it keeps the queue and retries later. The game must never wait on it |
 | `GraspRecorder.cs`, `RobotGripper.cs`, `GraspAugmenter.cs` | Create the `human`, `robot`, and `augmented` records | Nothing |
 | `Assets/Scripts/RobotCamera.cs` | Saves the color, depth, and mask images for each grasp into `images/` and fills in the record's `image` section | The uploader can send image files separately (see `PUT /images/{image_id}/{kind}` below), or skip them at first. Records are useful without them |
 
@@ -154,7 +154,7 @@ flowchart LR
     subgraph Quest["Quest game (Unity)"]
         R["GraspRecorder<br/>RobotGripper<br/>GraspAugmenter"] -->|GraspRecord| D[GraspDataset]
         D -->|append one line| F[("grasps.jsonl")]
-        D -->|RecordAdded| U["DataUploader<br/>(to build)"]
+        D -->|RecordAdded| U["DataUploader"]
         U <-->|pending records| Q[("upload queue file")]
     end
     U -->|"POST /grasps<br/>batch of records"| A["FastAPI server<br/>/server"]

@@ -29,8 +29,10 @@ namespace SortQuest
         public string PlayerId { get; private set; }
         public string FilePath => Path.Combine(Application.persistentDataPath, fileName);
         public IReadOnlyList<GraspRecord> Records => records;
+        public IEnumerable<GraspRecord> LocalRecords => records.Where(r => !remoteIds.Contains(r.record_id));
 
         private readonly List<GraspRecord> records = new List<GraspRecord>();
+        private readonly HashSet<string> remoteIds = new HashSet<string>();
 
         private void Awake()
         {
@@ -67,6 +69,22 @@ namespace SortQuest
         {
             string id = TrashTypes.ItemId(itemType);
             return records.Count(r => r.item_type == id && r.IsGood && r.source != GraspRecord.SourceRobot);
+        }
+
+        /// <summary>Merge shared training examples in memory without triggering uploads or augmentation.</summary>
+        public int MergeRemote(IEnumerable<GraspRecord> incoming)
+        {
+            var known = new HashSet<string>(records.Select(r => r.record_id));
+            int added = 0;
+            foreach (var record in incoming)
+            {
+                if (record == null || string.IsNullOrEmpty(record.record_id) || !record.IsGood ||
+                    record.source == GraspRecord.SourceRobot || !known.Add(record.record_id)) continue;
+                records.Add(record);
+                remoteIds.Add(record.record_id);
+                added++;
+            }
+            return added;
         }
 
         private void Load()
