@@ -88,10 +88,15 @@ namespace SortQuest
 
         public static GripperGrasp ToWorld(GripperGrasp local, Transform item)
         {
+            return ToWorld(local, item.position, item.rotation);
+        }
+
+        public static GripperGrasp ToWorld(GripperGrasp local, Vector3 itemPosition, Quaternion itemRotation)
+        {
             return new GripperGrasp
             {
-                Position = item.position + item.rotation * local.Position,
-                Rotation = item.rotation * local.Rotation,
+                Position = itemPosition + itemRotation * local.Position,
+                Rotation = itemRotation * local.Rotation,
                 Width = local.Width
             };
         }

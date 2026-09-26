@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Globalization;
 using Oculus.Interaction.HandGrab;
 using Oculus.Interaction.Input;
 using UnityEngine;
@@ -77,10 +76,12 @@ namespace SortQuest
             item.Released -= HandleReleased;
             item.Sorted -= HandleSorted;
             item.Missed -= HandleMissed;
+            item.PickedByRobot -= HandlePickedByRobot;
             item.Grabbed += HandleGrabbed;
             item.Released += HandleReleased;
             item.Sorted += HandleSorted;
             item.Missed += HandleMissed;
+            item.PickedByRobot += HandlePickedByRobot;
         }
 
         private void HandleGrabbed(TrashItem item)
@@ -106,24 +107,9 @@ namespace SortQuest
             lastWorldGrasp = worldGrasp;
             hasLastGrasp = true;
 
-            Transform itemTransform = item.transform;
-            GripperGrasp local = HandGripperPose.ToLocal(worldGrasp, itemTransform);
-            var record = new GraspRecord
-            {
-                session_id = dataset.SessionId,
-                player = dataset.PlayerId,
-                timestamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-                source = GraspRecord.SourceHuman,
-                item_type = TrashTypes.ItemId(item.ItemType),
-                correct_bin = TrashTypes.BinId(item.CorrectBin),
-                hand = hand.Handedness == Handedness.Left ? "left" : "right"
-            };
-            record.grasp.PosLocal = local.Position;
-            record.grasp.RotLocal = local.Rotation;
-            record.grasp.width_m = GraspMath.Round(local.Width);
-            record.item_pose_world.pos = GraspMath.FromVector3(itemTransform.position);
-            record.item_pose_world.rot = GraspMath.FromQuaternion(itemTransform.rotation);
-            pending[item] = record;
+            GripperGrasp local = HandGripperPose.ToLocal(worldGrasp, item.transform);
+            string handName = hand.Handedness == Handedness.Left ? "left" : "right";
+            pending[item] = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName);
         }
 
         private void HandleReleased(TrashItem item)
@@ -142,6 +128,12 @@ namespace SortQuest
         private void HandleMissed(TrashItem item)
         {
             Finish(item, GraspRecord.NoBin, false, true);
+        }
+
+        // The robot picked up an item a person grabbed earlier: that person's grab didn't sort it.
+        private void HandlePickedByRobot(TrashItem item)
+        {
+            Finish(item, GraspRecord.NoBin, false, item.WasDropped);
         }
 
         private void Finish(TrashItem item, string bin, bool correct, bool dropped)

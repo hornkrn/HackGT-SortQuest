@@ -43,6 +43,13 @@ namespace SortQuest
             set => running = value;
         }
 
+        /// <summary>How far along the belt a point is: 0 at the start point, 1 at the end point.</summary>
+        public float Progress(Vector3 position)
+        {
+            Vector3 span = endPoint.position - startPoint.position;
+            return Vector3.Dot(position - startPoint.position, span) / span.sqrMagnitude;
+        }
+
         public bool IsPastEnd(Vector3 position)
         {
             return Vector3.Dot(position - endPoint.position, Direction) > 0f;

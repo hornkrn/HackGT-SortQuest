@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEngine;
 
 namespace SortQuest
@@ -29,6 +30,28 @@ namespace SortQuest
 
         /// <summary>Good data: landed in the correct bin without being dropped.</summary>
         public bool IsGood => outcome != null && outcome.correct && !outcome.dropped;
+
+        /// <summary>A new record for a grasp on an item, stored in the item's frame. The outcome is filled in later.</summary>
+        public static GraspRecord Create(GraspDataset dataset, string source, TrashItem item, GripperGrasp localGrasp, string hand)
+        {
+            Transform itemTransform = item.transform;
+            var record = new GraspRecord
+            {
+                session_id = dataset.SessionId,
+                player = source == SourceRobot ? "robot" : dataset.PlayerId,
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                source = source,
+                item_type = TrashTypes.ItemId(item.ItemType),
+                correct_bin = TrashTypes.BinId(item.CorrectBin),
+                hand = hand
+            };
+            record.grasp.PosLocal = localGrasp.Position;
+            record.grasp.RotLocal = localGrasp.Rotation;
+            record.grasp.width_m = GraspMath.Round(localGrasp.Width);
+            record.item_pose_world.pos = GraspMath.FromVector3(itemTransform.position);
+            record.item_pose_world.rot = GraspMath.FromQuaternion(itemTransform.rotation);
+            return record;
+        }
 
         public GripperGrasp LocalGrasp => new GripperGrasp
         {

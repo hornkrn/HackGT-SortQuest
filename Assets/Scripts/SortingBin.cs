@@ -82,7 +82,13 @@ namespace SortQuest
             }
 
             item.MarkSorted(this, correct);
-            if (scoreBoard != null)
+            if (item.LastHeldByRobot)
+            {
+                Debug.Log($"[SortQuest] Robot dropped {TrashTypes.DisplayName(item.ItemType)} into the {binType} bin: " +
+                          (correct ? "correct" : "wrong"));
+            }
+            // The player's score only counts the player's own sorts.
+            if (scoreBoard != null && !item.LastHeldByRobot)
             {
                 scoreBoard.RegisterSort(item, this, correct);
             }

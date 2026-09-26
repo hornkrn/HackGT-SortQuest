@@ -56,17 +56,17 @@ namespace SortQuest
             RecordAdded?.Invoke(record);
         }
 
-        /// <summary>Successful (good) grasps for one item type, from any source.</summary>
+        /// <summary>Successful (good) grasps for one item type that the robot can learn from (not its own).</summary>
         public List<GraspRecord> GoodGrasps(ItemType itemType)
         {
             string id = TrashTypes.ItemId(itemType);
-            return records.Where(r => r.item_type == id && r.IsGood).ToList();
+            return records.Where(r => r.item_type == id && r.IsGood && r.source != GraspRecord.SourceRobot).ToList();
         }
 
         public int CountGood(ItemType itemType)
         {
             string id = TrashTypes.ItemId(itemType);
-            return records.Count(r => r.item_type == id && r.IsGood);
+            return records.Count(r => r.item_type == id && r.IsGood && r.source != GraspRecord.SourceRobot);
         }
 
         private void Load()

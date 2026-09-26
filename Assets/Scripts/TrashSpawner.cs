@@ -109,7 +109,7 @@ namespace SortQuest
 
         private void HandleMissed(TrashItem item)
         {
-            if (scoreBoard != null)
+            if (scoreBoard != null && !item.LastHeldByRobot)
             {
                 scoreBoard.RegisterMiss(item);
             }

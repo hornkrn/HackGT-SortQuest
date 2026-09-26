@@ -11,7 +11,8 @@ using UnityEngine.SceneManagement;
 namespace SortQuest
 {
     /// <summary>
-    /// Menu items that build the milestone 1 scene objects and trash item prefabs, and add grasp recording (milestone 2).
+    /// Menu items that build the milestone 1 scene objects and trash item prefabs, add grasp recording (milestone 2),
+    /// and add the robot gripper (milestone 3).
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -147,6 +148,93 @@ namespace SortQuest
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             Debug.Log($"[SortQuest] Grasp recording added and scene saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Add Robot Gripper (Milestone 3)")]
+        public static void AddRobotGripper()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            TrashSpawner spawner = Object.FindAnyObjectByType<TrashSpawner>();
+            ConveyorBelt belt = Object.FindAnyObjectByType<ConveyorBelt>();
+            GraspDataset dataset = Object.FindAnyObjectByType<GraspDataset>();
+            if (spawner == null || belt == null || dataset == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest",
+                    "Run Build Milestone 1 Scene and Add Grasp Recording (Milestone 2) first.", "OK");
+                return;
+            }
+
+            // Root sits at the grasp point; rotated so its approach direction (+Z) points down at the belt.
+            GameObject go = GetOrCreate("RobotGripper", null, null, out bool created);
+            if (created)
+            {
+                go.transform.SetPositionAndRotation(new Vector3(0.9f, 1.3f, 0.6f), Quaternion.Euler(90f, 0f, 0f));
+            }
+            Rigidbody body = GetOrAdd<Rigidbody>(go, out bool bodyAdded);
+            if (bodyAdded)
+            {
+                body.isKinematic = true;
+                body.useGravity = false;
+            }
+            GraspPolicy policy = GetOrAdd<GraspPolicy>(go, out _);
+            RobotGripper robot = GetOrAdd<RobotGripper>(go, out _);
+
+            // Visual parts only: colliders are removed so the gripper never pushes items around.
+            Material material = GetOrCreateMaterial("Mat_Robot", new Color(1f, 0.55f, 0.1f));
+            Transform palm = BuildRobotPart(go.transform, "Palm", material);
+            Transform fingerLeft = BuildRobotPart(go.transform, "FingerLeft", material);
+            Transform fingerRight = BuildRobotPart(go.transform, "FingerRight", material);
+
+            SetIfEmpty(policy, "dataset", dataset);
+            SetIfEmpty(robot, "policy", policy);
+            SetIfEmpty(robot, "dataset", dataset);
+            SetIfEmpty(robot, "belt", belt);
+            SetIfEmpty(robot, "spawner", spawner);
+            SetIfEmpty(robot, "palm", palm);
+            SetIfEmpty(robot, "fingerLeft", fingerLeft);
+            SetIfEmpty(robot, "fingerRight", fingerRight);
+
+            if (HasTmpEssentials())
+            {
+                GameObject status = GetOrCreate("RobotStatus", null, null, out bool statusCreated);
+                TextMeshPro text = GetOrAdd<TextMeshPro>(status, out bool textAdded);
+                GetOrAdd<Billboard>(status, out _);
+                if (statusCreated || textAdded)
+                {
+                    status.transform.position = new Vector3(0.9f, 1.65f, 0.9f);
+                    text.rectTransform.sizeDelta = new Vector2(1.6f, 0.5f);
+                    text.fontSize = 0.9f;
+                    text.alignment = TextAlignmentOptions.Center;
+                    text.color = new Color(1f, 0.7f, 0.3f);
+                    text.text = "ROBOT";
+                }
+                SetIfEmpty(robot, "statusText", text);
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log($"[SortQuest] Robot gripper added and scene saved ({scene.path}).");
+        }
+
+        private static Transform BuildRobotPart(Transform parent, string name, Material material)
+        {
+            GameObject part = GetOrCreate(name, parent, PrimitiveType.Cube, out bool created);
+            if (created)
+            {
+                Object.DestroyImmediate(part.GetComponent<Collider>());
+                part.GetComponent<Renderer>().sharedMaterial = material;
+            }
+            return part.transform;
         }
 
         [MenuItem("SortQuest/Open Grasp Data Folder")]

@@ -51,6 +51,7 @@ namespace SortQuest
         public event Action<TrashItem> Released;
         public event Action<TrashItem, SortingBin, bool> Sorted;
         public event Action<TrashItem> Missed;
+        public event Action<TrashItem> PickedByRobot;
 
         public ItemType ItemType => itemType;
         public BinType CorrectBin => TrashTypes.CorrectBin(itemType);
@@ -69,6 +70,9 @@ namespace SortQuest
 
         /// <summary>PointerEvent.Data of the grab; by default the interactor itself.</summary>
         public object GrabberData { get; private set; }
+
+        /// <summary>True if the robot, not a person, was the last to pick this item up.</summary>
+        public bool LastHeldByRobot { get; private set; }
 
         private Rigidbody body;
         private ConveyorBelt belt;
@@ -223,6 +227,7 @@ namespace SortQuest
             State = TrashItemState.Held;
             GrabberId = evt.Identifier;
             GrabberData = evt.Data;
+            LastHeldByRobot = false;
             grabTime = Time.time;
             WasDropped = false;
             fellOffEnd = false;
@@ -238,6 +243,30 @@ namespace SortQuest
             body.isKinematic = false;
             clampAfterRelease = true;
             Released?.Invoke(this);
+        }
+
+        /// <summary>Called by the RobotGripper when its fingers close on the item; it then holds it with a joint.</summary>
+        public void BeginRobotHold()
+        {
+            if (State != TrashItemState.OnBelt && State != TrashItemState.Loose)
+            {
+                return;
+            }
+            State = TrashItemState.Held;
+            LastHeldByRobot = true;
+            WasDropped = false;
+            fellOffEnd = false;
+            body.isKinematic = false;
+            PickedByRobot?.Invoke(this);
+        }
+
+        /// <summary>Called by the RobotGripper when it lets go.</summary>
+        public void EndRobotHold()
+        {
+            if (State == TrashItemState.Held && LastHeldByRobot)
+            {
+                State = TrashItemState.Loose;
+            }
         }
 
         private void EnterBelt()
