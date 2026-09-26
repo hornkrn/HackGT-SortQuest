@@ -59,21 +59,13 @@ namespace SortQuest
         [Tooltip("Give up on a move after this many seconds.")]
         [SerializeField] private float stepTimeout = 4f;
 
-        [Header("Gripper shape (meters)")]
-        [SerializeField] private float maxOpening = 0.1f;
-        [SerializeField] private float fingerLength = 0.06f;
-        [SerializeField] private float fingerWidth = 0.025f;
-        [SerializeField] private float fingerThickness = 0.012f;
-
-        [Tooltip("How far the fingertips reach past the grasp point.")]
-        [SerializeField] private float fingertipPastGrasp = 0.01f;
-
-        [SerializeField] private float palmThickness = 0.02f;
-
-        [Tooltip("A finger closer than this to the item counts as touching it.")]
-        [SerializeField] private float touchSkin = 0.002f;
+        [Header("Gripper shape")]
+        [SerializeField] private GripperShape shape = new GripperShape();
 
         public event Action<Attempt> AttemptFinished;
+
+        /// <summary>Raised when the robot picks a grasp for an item, before it starts moving.</summary>
+        public event Action<TrashItem, GraspChoice> GraspPlanned;
 
         public bool Active { get; set; }
 
@@ -85,6 +77,8 @@ namespace SortQuest
         public int Attempts { get; private set; }
         public int Successes { get; private set; }
         public float Accuracy => Attempts == 0 ? 0f : (float)Successes / Attempts;
+        public GripperShape Shape => shape;
+        public float ApproachDistance => approachDistance;
 
         private Rigidbody body;
         private Vector3 homePosition;
@@ -94,7 +88,6 @@ namespace SortQuest
         private SortingBin[] bins;
         private string lastResult = "Waiting for trash";
         private readonly HashSet<TrashItem> attempted = new HashSet<TrashItem>();
-        private readonly Collider[] overlapBuffer = new Collider[16];
         private readonly WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
         private Coroutine runRoutine;
         private TrashItem heldItem;
@@ -211,6 +204,7 @@ namespace SortQuest
         {
             attempted.Add(item);
             GraspChoice choice = policy.ChooseGrasp(item);
+            GraspPlanned?.Invoke(item, choice);
             OpenFingers();
 
             // 1. Line up in front of the grasp, then 2. move in along the approach direction.
@@ -236,7 +230,7 @@ namespace SortQuest
 
             // 3. The open fingers must not run into the item or anything else on the way in. Then close.
             GripperGrasp grasp = WorldGrasp(choice, item);
-            bool blocked = PathBlocked(grasp);
+            bool blocked = shape.PathBlocked(grasp, approachDistance, body);
             bool leftTouch = false;
             bool rightTouch = false;
             if (!blocked)
@@ -250,8 +244,8 @@ namespace SortQuest
                     }
                     grasp = WorldGrasp(choice, item);
                     MoveToward(grasp.Position, grasp.Rotation);
-                    leftTouch = leftTouch || FingerTouches(grasp, true, leftOffset, item);
-                    rightTouch = rightTouch || FingerTouches(grasp, false, rightOffset, item);
+                    leftTouch = leftTouch || shape.FingerTouches(grasp, true, leftOffset, item.Body);
+                    rightTouch = rightTouch || shape.FingerTouches(grasp, false, rightOffset, item.Body);
                     float step = closeSpeed * Time.fixedDeltaTime;
                     if (!leftTouch) leftOffset = Mathf.Max(0f, leftOffset - step);
                     if (!rightTouch) rightOffset = Mathf.Max(0f, rightOffset - step);
@@ -387,84 +381,13 @@ namespace SortQuest
 
         private void OpenFingers()
         {
-            leftOffset = maxOpening * 0.5f;
-            rightOffset = maxOpening * 0.5f;
-        }
-
-        /// <summary>World box of one finger for a gripper at the given pose. Offset = grasp center to the finger's inner face.</summary>
-        private void FingerBox(GripperGrasp pose, bool left, float offset, out Vector3 center, out Vector3 halfExtents)
-        {
-            float side = left ? -1f : 1f;
-            var local = new Vector3(side * (offset + fingerThickness * 0.5f), 0f, fingertipPastGrasp - fingerLength * 0.5f);
-            center = pose.Position + pose.Rotation * local;
-            halfExtents = new Vector3(fingerThickness, fingerWidth, fingerLength) * 0.5f;
-        }
-
-        private bool FingerTouches(GripperGrasp pose, bool left, float offset, TrashItem item)
-        {
-            FingerBox(pose, left, offset, out Vector3 center, out Vector3 half);
-            int count = Physics.OverlapBoxNonAlloc(center, half + Vector3.one * touchSkin, overlapBuffer,
-                pose.Rotation, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < count; i++)
-            {
-                if (overlapBuffer[i].attachedRigidbody == item.Body)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>True if the open fingers would pass through anything solid while moving in to the grasp.</summary>
-        private bool PathBlocked(GripperGrasp grasp)
-        {
-            const int samples = 4;
-            for (int i = 0; i <= samples; i++)
-            {
-                GripperGrasp pose = grasp;
-                pose.Position = grasp.Position - grasp.Approach * (approachDistance * i / samples);
-                if (FingerBlocked(pose, true) || FingerBlocked(pose, false))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private bool FingerBlocked(GripperGrasp pose, bool left)
-        {
-            FingerBox(pose, left, maxOpening * 0.5f, out Vector3 center, out Vector3 half);
-            Vector3 shrunk = Vector3.Max(half - Vector3.one * touchSkin, Vector3.one * 0.001f);
-            int count = Physics.OverlapBoxNonAlloc(center, shrunk, overlapBuffer, pose.Rotation, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < count; i++)
-            {
-                if (overlapBuffer[i].attachedRigidbody != body)
-                {
-                    return true;
-                }
-            }
-            return false;
+            leftOffset = shape.OpenOffset;
+            rightOffset = shape.OpenOffset;
         }
 
         private void ApplyFingerLayout()
         {
-            float fingerZ = fingertipPastGrasp - fingerLength * 0.5f;
-            var fingerScale = new Vector3(fingerThickness, fingerWidth, fingerLength);
-            if (fingerLeft != null)
-            {
-                fingerLeft.localPosition = new Vector3(-(leftOffset + fingerThickness * 0.5f), 0f, fingerZ);
-                fingerLeft.localScale = fingerScale;
-            }
-            if (fingerRight != null)
-            {
-                fingerRight.localPosition = new Vector3(rightOffset + fingerThickness * 0.5f, 0f, fingerZ);
-                fingerRight.localScale = fingerScale;
-            }
-            if (palm != null)
-            {
-                palm.localPosition = new Vector3(0f, 0f, fingerZ - fingerLength * 0.5f - palmThickness * 0.5f);
-                palm.localScale = new Vector3(maxOpening + 2f * fingerThickness, fingerWidth, palmThickness);
-            }
+            shape.Layout(palm, fingerLeft, fingerRight, leftOffset, rightOffset);
         }
     }
 }

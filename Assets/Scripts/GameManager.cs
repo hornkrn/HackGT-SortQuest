@@ -34,6 +34,7 @@ namespace SortQuest
         [SerializeField] private RobotGripper robot;
         [SerializeField] private ScoreBoard scoreBoard;
         [SerializeField] private GraspDataset dataset;
+        [SerializeField] private GraspAugmenter augmenter;
 
         [Tooltip("Big text in front of the player that shows the current state and timer.")]
         [SerializeField] private TMP_Text statusText;
@@ -73,6 +74,8 @@ namespace SortQuest
         private int goodGraspsTaught;
         private int robotRoundAttempts;
         private int robotRoundSuccesses;
+        private int variationsTried;
+        private int variationsKept;
         private readonly Dictionary<ItemType, Tally> firstRobotRound = new Dictionary<ItemType, Tally>();
         private readonly Dictionary<ItemType, Tally> retryRobotRound = new Dictionary<ItemType, Tally>();
         private readonly Dictionary<ItemType, int> goodGraspsByType = new Dictionary<ItemType, int>();
@@ -85,6 +88,7 @@ namespace SortQuest
             if (robot == null) robot = FindAnyObjectByType<RobotGripper>();
             if (scoreBoard == null) scoreBoard = FindAnyObjectByType<ScoreBoard>();
             if (dataset == null) dataset = FindAnyObjectByType<GraspDataset>();
+            if (augmenter == null) augmenter = FindAnyObjectByType<GraspAugmenter>();
             if (spawner == null)
             {
                 Debug.LogError("[SortQuest] GameManager needs a TrashSpawner.", this);
@@ -96,12 +100,14 @@ namespace SortQuest
         {
             if (dataset != null) dataset.RecordAdded += HandleRecordAdded;
             if (robot != null) robot.AttemptFinished += HandleRobotAttempt;
+            if (augmenter != null) augmenter.Practiced += HandlePracticed;
         }
 
         private void OnDisable()
         {
             if (dataset != null) dataset.RecordAdded -= HandleRecordAdded;
             if (robot != null) robot.AttemptFinished -= HandleRobotAttempt;
+            if (augmenter != null) augmenter.Practiced -= HandlePracticed;
         }
 
         private void Start()
@@ -179,6 +185,8 @@ namespace SortQuest
                     retryRobotRound.Clear();
                     goodGraspsByType.Clear();
                     goodGraspsThisRound = 0;
+                    variationsTried = 0;
+                    variationsKept = 0;
                     if (scoreBoard != null) scoreBoard.ResetScore();
                     if (robot != null) robot.ResetStats();
                     break;
@@ -278,6 +286,12 @@ namespace SortQuest
             }
         }
 
+        private void HandlePracticed(GraspRecord original, int tried, int kept)
+        {
+            variationsTried += tried;
+            variationsKept += kept;
+        }
+
         private void HandleRobotAttempt(RobotGripper.Attempt attempt)
         {
             if (State != GameState.RobotRound || attempt.Item == null)
@@ -369,6 +383,10 @@ namespace SortQuest
                 case GameState.Training:
                     title = "TRAINING THE ROBOT";
                     body.AppendLine($"You taught it {goodGraspsThisRound} good grasps this round.");
+                    if (variationsTried > 0)
+                    {
+                        body.AppendLine($"It practiced {variationsTried} variations of them; {variationsKept} worked.");
+                    }
                     foreach (KeyValuePair<ItemType, int> pair in goodGraspsByType)
                     {
                         body.AppendLine($"{TrashTypes.DisplayName(pair.Key)}: {pair.Value}");
@@ -408,6 +426,10 @@ namespace SortQuest
                                 $"{scoreBoard.Wrong} wrong, {scoreBoard.Missed} missed)");
             }
             body.AppendLine($"Good grasps you taught: {goodGraspsThisRound + goodGraspsTaught}");
+            if (variationsTried > 0)
+            {
+                body.AppendLine($"Variations the robot practiced: {variationsKept} of {variationsTried} worked");
+            }
 
             int attempts = 0;
             int successes = 0;

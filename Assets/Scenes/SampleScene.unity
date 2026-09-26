@@ -738,6 +738,64 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0.8}
   m_SizeDelta: {x: 0.5, y: 0.3}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &109302598
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 109302600}
+  - component: {fileID: 109302599}
+  m_Layer: 0
+  m_Name: PlayerGhost
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &109302599
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 109302598}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3668d7d8758501e4ba39ec8e51a6ce42, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GhostGripper
+  source: 0
+  recorder: {fileID: 0}
+  robot: {fileID: 0}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  color: {r: 0.3, g: 0.9, b: 1, a: 0.45}
+  lingerSeconds: 1.5
+  shape:
+    maxOpening: 0.1
+    fingerLength: 0.06
+    fingerWidth: 0.025
+    fingerThickness: 0.012
+    fingertipPastGrasp: 0.01
+    palmThickness: 0.02
+    touchSkin: 0.002
+--- !u!4 &109302600
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 109302598}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &144292794
 GameObject:
   m_ObjectHideFlags: 0
@@ -919,6 +977,69 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &282807052
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 282807055}
+  - component: {fileID: 282807054}
+  - component: {fileID: 282807053}
+  m_Layer: 0
+  m_Name: LearningBars
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &282807053
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 282807052}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f28e7e83ae282d147beed89169e4f3a1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.Billboard
+--- !u!114 &282807054
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 282807052}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9cda657e3b575a469651e1207c27b9a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.ConfidenceBars
+  policy: {fileID: 0}
+  dataset: {fileID: 0}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  labelWidth: 0.6
+  barWidth: 0.45
+  rowHeight: 0.075
+--- !u!4 &282807055
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 282807052}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.55, y: 1.35, z: 1.25}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1959,6 +2080,130 @@ Transform:
   m_Children: []
   m_Father: {fileID: 367145953}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &539995006
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 539995009}
+  - component: {fileID: 539995008}
+  - component: {fileID: 539995007}
+  m_Layer: 0
+  m_Name: RobotAccuracyChart
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &539995007
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 539995006}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f28e7e83ae282d147beed89169e4f3a1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.Billboard
+--- !u!114 &539995008
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 539995006}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67dc83c502c5fd64abd9aa3fac1eb614, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.AccuracyChart
+  robot: {fileID: 0}
+  game: {fileID: 0}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  width: 0.8
+  height: 0.45
+  window: 5
+  minSlots: 10
+  lineColor: {r: 1, g: 0.6, b: 0.15, a: 1}
+  axisColor: {r: 1, g: 1, b: 1, a: 0.6}
+--- !u!4 &539995009
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 539995006}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 1.55, y: 1.35, z: 1.25}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &544321499
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 544321501}
+  - component: {fileID: 544321500}
+  m_Layer: 0
+  m_Name: RobotGhost
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &544321500
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 544321499}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3668d7d8758501e4ba39ec8e51a6ce42, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GhostGripper
+  source: 1
+  recorder: {fileID: 0}
+  robot: {fileID: 0}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  color: {r: 1, g: 0.55, b: 0.1, a: 0.45}
+  lingerSeconds: 1.5
+  shape:
+    maxOpening: 0.1
+    fingerLength: 0.06
+    fingerWidth: 0.025
+    fingerThickness: 0.012
+    fingertipPastGrasp: 0.01
+    palmThickness: 0.02
+    touchSkin: 0.002
+--- !u!4 &544321501
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 544321499}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &561862102
 GameObject:
   m_ObjectHideFlags: 0
@@ -2352,6 +2597,56 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0.8}
   m_SizeDelta: {x: 0.5, y: 0.3}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!1 &573722335
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 573722337}
+  - component: {fileID: 573722336}
+  m_Layer: 0
+  m_Name: GrabDots
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &573722336
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 573722335}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ff385a07cb80f040bff9808440b0950, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GrabDots
+  spawner: {fileID: 0}
+  dataset: {fileID: 0}
+  material: {fileID: 2100000, guid: b3f519b58b02b1a45b19c3a6180bcf01, type: 2}
+  maxGrasps: 20
+  dotSize: 0.008
+  color: {r: 0.2, g: 1, b: 0.4, a: 0.9}
+--- !u!4 &573722337
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 573722335}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &648891480
 GameObject:
   m_ObjectHideFlags: 0
@@ -5255,7 +5550,7 @@ MonoBehaviour:
   m_spriteAsset: {fileID: 0}
   m_tintAllSprites: 0
   m_StyleSheet: {fileID: 0}
-  m_TextStyleHashCode: 0
+  m_TextStyleHashCode: -1183493901
   m_overrideHtmlColors: 0
   m_faceColor:
     serializedVersion: 2
@@ -6165,6 +6460,7 @@ MonoBehaviour:
   robot: {fileID: 2006899603}
   scoreBoard: {fileID: 903874098}
   dataset: {fileID: 39390844}
+  augmenter: {fileID: 0}
   statusText: {fileID: 1475472505}
   introSeconds: 10
   humanRoundSeconds: 60
@@ -6643,6 +6939,59 @@ Transform:
   - {fileID: 841695403}
   m_Father: {fileID: 1203392482}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1815988800
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1815988802}
+  - component: {fileID: 1815988801}
+  m_Layer: 0
+  m_Name: GraspAugmenter
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1815988801
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1815988800}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 97be5f925e65a9e41890ae50edee8261, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SortQuest.GraspAugmenter
+  dataset: {fileID: 39390844}
+  spawner: {fileID: 193552011}
+  robot: {fileID: 2006899603}
+  variationsPerGrasp: 12
+  positionJitter: 0.01
+  angleJitter: 10
+  checksPerFrame: 4
+  sandboxOrigin: {x: 0, y: -100, z: 0}
+  logResults: 1
+--- !u!4 &1815988802
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1815988800}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1848026357
 GameObject:
   m_ObjectHideFlags: 0
@@ -7013,13 +7362,14 @@ MonoBehaviour:
   carryHeight: 1.25
   releaseHeight: 0.85
   stepTimeout: 4
-  maxOpening: 0.1
-  fingerLength: 0.06
-  fingerWidth: 0.025
-  fingerThickness: 0.012
-  fingertipPastGrasp: 0.01
-  palmThickness: 0.02
-  touchSkin: 0.002
+  shape:
+    maxOpening: 0.1
+    fingerLength: 0.06
+    fingerWidth: 0.025
+    fingerThickness: 0.012
+    fingertipPastGrasp: 0.01
+    palmThickness: 0.02
+    touchSkin: 0.002
 --- !u!114 &2006899604
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7168,3 +7518,9 @@ SceneRoots:
   - {fileID: 1625599087}
   - {fileID: 1738201055}
   - {fileID: 1475472507}
+  - {fileID: 539995009}
+  - {fileID: 282807055}
+  - {fileID: 109302600}
+  - {fileID: 544321501}
+  - {fileID: 573722337}
+  - {fileID: 1815988802}

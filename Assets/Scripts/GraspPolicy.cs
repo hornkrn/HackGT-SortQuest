@@ -56,10 +56,21 @@ namespace SortQuest
 
         public GraspChoice ChooseGrasp(TrashItem item)
         {
-            List<GraspRecord> good = dataset != null ? dataset.GoodGrasps(item.ItemType) : new List<GraspRecord>();
+            if (TryGetLearnedGrasp(item.ItemType, out GraspChoice learned))
+            {
+                return learned;
+            }
+            return new GraspChoice { LocalGrasp = RandomGrasp(item), FromData = false };
+        }
+
+        /// <summary>The medoid of the successful grasps for an item type. False if there are none yet.</summary>
+        public bool TryGetLearnedGrasp(ItemType itemType, out GraspChoice choice)
+        {
+            choice = default;
+            List<GraspRecord> good = dataset != null ? dataset.GoodGrasps(itemType) : new List<GraspRecord>();
             if (good.Count == 0)
             {
-                return new GraspChoice { LocalGrasp = RandomGrasp(item), FromData = false };
+                return false;
             }
 
             var grasps = new List<GripperGrasp>(good.Count);
@@ -92,7 +103,7 @@ namespace SortQuest
                 }
             }
 
-            return new GraspChoice
+            choice = new GraspChoice
             {
                 LocalGrasp = grasps[bestIndex],
                 FromData = true,
@@ -100,6 +111,7 @@ namespace SortQuest
                 Support = bestSupport,
                 GoodCount = grasps.Count
             };
+            return true;
         }
 
         public bool Agree(GripperGrasp a, GripperGrasp b)

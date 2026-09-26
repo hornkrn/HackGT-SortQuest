@@ -12,7 +12,7 @@ namespace SortQuest
 {
     /// <summary>
     /// Menu items that build the milestone 1 scene objects and trash item prefabs, add grasp recording (milestone 2),
-    /// add the robot gripper (milestone 3), and add the game manager (milestone 4).
+    /// add the robot gripper (milestone 3), add the game manager (milestone 4), and add the learning visuals (milestone 5).
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -274,6 +274,77 @@ namespace SortQuest
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
             Debug.Log($"[SortQuest] Game manager added and scene saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Add Learning Visuals and Augmenter (Milestone 5)")]
+        public static void AddLearningVisuals()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            if (Object.FindAnyObjectByType<RobotGripper>() == null || Object.FindAnyObjectByType<GraspRecorder>() == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Run the Milestone 1 to 4 menu items first.", "OK");
+                return;
+            }
+
+            // One see-through material for every visual; each shape sets its own color.
+            string materialPath = $"{MaterialFolder}/Mat_Viz.mat";
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (material == null)
+            {
+                material = new Material(Shader.Find("Sprites/Default"));
+                AssetDatabase.CreateAsset(material, materialPath);
+            }
+
+            GameObject chart = GetOrCreate("RobotAccuracyChart", null, null, out bool chartCreated);
+            if (chartCreated) chart.transform.position = new Vector3(1.55f, 1.35f, 1.25f);
+            SetIfEmpty(GetOrAdd<AccuracyChart>(chart, out _), "material", material);
+            GetOrAdd<Billboard>(chart, out _);
+
+            GameObject bars = GetOrCreate("LearningBars", null, null, out bool barsCreated);
+            if (barsCreated) bars.transform.position = new Vector3(-1.55f, 1.35f, 1.25f);
+            SetIfEmpty(GetOrAdd<ConfidenceBars>(bars, out _), "material", material);
+            GetOrAdd<Billboard>(bars, out _);
+
+            AddGhost("PlayerGhost", GhostGripper.Source.PlayerGrasp, new Color(0.3f, 0.9f, 1f, 0.45f), material);
+            AddGhost("RobotGhost", GhostGripper.Source.RobotPlan, new Color(1f, 0.55f, 0.1f, 0.45f), material);
+
+            GameObject dots = GetOrCreate("GrabDots", null, null, out _);
+            SetIfEmpty(GetOrAdd<GrabDots>(dots, out _), "material", material);
+
+            GameObject augmenterObject = GetOrCreate("GraspAugmenter", null, null, out _);
+            GraspAugmenter augmenter = GetOrAdd<GraspAugmenter>(augmenterObject, out _);
+            SetIfEmpty(augmenter, "dataset", Object.FindAnyObjectByType<GraspDataset>());
+            SetIfEmpty(augmenter, "spawner", Object.FindAnyObjectByType<TrashSpawner>());
+            SetIfEmpty(augmenter, "robot", Object.FindAnyObjectByType<RobotGripper>());
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[SortQuest] Learning visuals and grasp augmenter added and scene saved ({scene.path}).");
+        }
+
+        private static void AddGhost(string name, GhostGripper.Source source, Color color, Material material)
+        {
+            GameObject go = GetOrCreate(name, null, null, out _);
+            GhostGripper ghost = GetOrAdd<GhostGripper>(go, out bool added);
+            if (added)
+            {
+                var so = new SerializedObject(ghost);
+                so.FindProperty("source").enumValueIndex = (int)source;
+                so.FindProperty("color").colorValue = color;
+                so.ApplyModifiedProperties();
+            }
+            SetIfEmpty(ghost, "material", material);
         }
 
         private static Transform BuildRobotPart(Transform parent, string name, Material material)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Oculus.Interaction.HandGrab;
 using Oculus.Interaction.Input;
@@ -22,6 +23,9 @@ namespace SortQuest
 
         [Header("Debug gizmo (Scene view)")]
         [SerializeField] private bool drawLastGrasp = true;
+
+        /// <summary>Raised when a player's grab is converted to a gripper grasp (in the item's frame).</summary>
+        public event Action<TrashItem, GripperGrasp> GraspCaptured;
 
         private readonly Dictionary<TrashItem, GraspRecord> pending = new Dictionary<TrashItem, GraspRecord>();
         private readonly List<HandGrabInteractor> handInteractors = new List<HandGrabInteractor>();
@@ -110,6 +114,7 @@ namespace SortQuest
             GripperGrasp local = HandGripperPose.ToLocal(worldGrasp, item.transform);
             string handName = hand.Handedness == Handedness.Left ? "left" : "right";
             pending[item] = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName);
+            GraspCaptured?.Invoke(item, local);
         }
 
         private void HandleReleased(TrashItem item)

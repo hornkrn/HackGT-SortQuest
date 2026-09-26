@@ -114,6 +114,19 @@ namespace SortQuest
             }
         }
 
+        /// <summary>The first prefab of this item type, or null.</summary>
+        public TrashItem GetPrefab(ItemType type)
+        {
+            foreach (TrashItem prefab in itemPrefabs)
+            {
+                if (prefab != null && prefab.ItemType == type)
+                {
+                    return prefab;
+                }
+            }
+            return null;
+        }
+
         private TrashItem PickPrefab()
         {
             if (!OnlyType.HasValue)

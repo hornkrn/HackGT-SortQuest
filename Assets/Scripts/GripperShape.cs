@@ -1,0 +1,138 @@
+using System;
+using UnityEngine;
+
+namespace SortQuest
+{
+    /// <summary>
+    /// Size of the two-finger gripper and the physics checks the robot uses to decide whether a grasp works.
+    /// Shared by the RobotGripper, the GraspAugmenter, and the ghost grippers so they all agree.
+    ///
+    /// Gripper frame: the grasp point is the origin, +Z is the approach direction, and the fingers close along X.
+    /// A finger's "offset" is the distance from the grasp point to the finger's inner face.
+    /// </summary>
+    [Serializable]
+    public class GripperShape
+    {
+        [Tooltip("Widest the fingers can open, in meters.")]
+        public float maxOpening = 0.1f;
+
+        public float fingerLength = 0.06f;
+        public float fingerWidth = 0.025f;
+        public float fingerThickness = 0.012f;
+
+        [Tooltip("How far the fingertips reach past the grasp point.")]
+        public float fingertipPastGrasp = 0.01f;
+
+        public float palmThickness = 0.02f;
+
+        [Tooltip("A finger closer than this to the item counts as touching it.")]
+        public float touchSkin = 0.002f;
+
+        private const float CloseStep = 0.001f;
+        private static readonly Collider[] OverlapBuffer = new Collider[16];
+
+        public float OpenOffset => maxOpening * 0.5f;
+        public Vector3 FingerSize => new Vector3(fingerThickness, fingerWidth, fingerLength);
+
+        public Vector3 FingerLocalCenter(bool left, float offset)
+        {
+            float side = left ? -1f : 1f;
+            return new Vector3(side * (offset + fingerThickness * 0.5f), 0f, fingertipPastGrasp - fingerLength * 0.5f);
+        }
+
+        /// <summary>Positions visual finger and palm boxes (children of the gripper root) for the given offsets.</summary>
+        public void Layout(Transform palm, Transform fingerLeft, Transform fingerRight, float leftOffset, float rightOffset)
+        {
+            float fingerZ = fingertipPastGrasp - fingerLength * 0.5f;
+            if (fingerLeft != null)
+            {
+                fingerLeft.localPosition = FingerLocalCenter(true, leftOffset);
+                fingerLeft.localScale = FingerSize;
+            }
+            if (fingerRight != null)
+            {
+                fingerRight.localPosition = FingerLocalCenter(false, rightOffset);
+                fingerRight.localScale = FingerSize;
+            }
+            if (palm != null)
+            {
+                palm.localPosition = new Vector3(0f, 0f, fingerZ - fingerLength * 0.5f - palmThickness * 0.5f);
+                palm.localScale = new Vector3(maxOpening + 2f * fingerThickness, fingerWidth, palmThickness);
+            }
+        }
+
+        /// <summary>True if the finger at this offset touches the item's colliders.</summary>
+        public bool FingerTouches(GripperGrasp pose, bool left, float offset, Rigidbody item)
+        {
+            Vector3 center = pose.Position + pose.Rotation * FingerLocalCenter(left, offset);
+            Vector3 half = FingerSize * 0.5f + Vector3.one * touchSkin;
+            int count = Physics.OverlapBoxNonAlloc(center, half, OverlapBuffer, pose.Rotation, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                if (OverlapBuffer[i].attachedRigidbody == item)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>True if the fully open finger overlaps anything solid (the item, the belt, other trash).</summary>
+        public bool FingerBlocked(GripperGrasp pose, bool left, Rigidbody ignore)
+        {
+            Vector3 center = pose.Position + pose.Rotation * FingerLocalCenter(left, OpenOffset);
+            Vector3 half = Vector3.Max(FingerSize * 0.5f - Vector3.one * touchSkin, Vector3.one * 0.001f);
+            int count = Physics.OverlapBoxNonAlloc(center, half, OverlapBuffer, pose.Rotation, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                if (ignore == null || OverlapBuffer[i].attachedRigidbody != ignore)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>True if the open fingers would pass through anything solid while moving in to the grasp.</summary>
+        public bool PathBlocked(GripperGrasp grasp, float approachDistance, Rigidbody ignore)
+        {
+            const int samples = 4;
+            for (int i = 0; i <= samples; i++)
+            {
+                GripperGrasp pose = grasp;
+                pose.Position = grasp.Position - grasp.Approach * (approachDistance * i / samples);
+                if (FingerBlocked(pose, true, ignore) || FingerBlocked(pose, false, ignore))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Closes both fingers in 1 mm steps on an item that isn't moving. True if both end up touching it,
+        /// which is the robot's success rule. Used by the augmenter; the robot closes over time instead.
+        /// </summary>
+        public bool TryClose(GripperGrasp grasp, Rigidbody item, out float closedWidth)
+        {
+            float left = CloseUntilTouch(grasp, true, item, out bool leftTouch);
+            float right = CloseUntilTouch(grasp, false, item, out bool rightTouch);
+            closedWidth = left + right;
+            return leftTouch && rightTouch;
+        }
+
+        private float CloseUntilTouch(GripperGrasp grasp, bool left, Rigidbody item, out bool touched)
+        {
+            for (float offset = OpenOffset; offset >= 0f; offset -= CloseStep)
+            {
+                if (FingerTouches(grasp, left, offset, item))
+                {
+                    touched = true;
+                    return offset;
+                }
+            }
+            touched = false;
+            return 0f;
+        }
+    }
+}

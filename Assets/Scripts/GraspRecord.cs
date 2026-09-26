@@ -53,6 +53,35 @@ namespace SortQuest
             return record;
         }
 
+        /// <summary>
+        /// A checked variation of a good grasp. It keeps the original's item, pose, and outcome,
+        /// with a new grasp and source "augmented".
+        /// </summary>
+        public static GraspRecord CreateAugmented(GraspRecord original, GripperGrasp localGrasp)
+        {
+            var record = new GraspRecord
+            {
+                session_id = original.session_id,
+                player = original.player,
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                source = SourceAugmented,
+                item_type = original.item_type,
+                correct_bin = original.correct_bin,
+                hand = original.hand,
+                item_pose_world = original.item_pose_world,
+                outcome = new OutcomeData
+                {
+                    bin = original.outcome.bin,
+                    correct = original.outcome.correct,
+                    dropped = original.outcome.dropped
+                }
+            };
+            record.grasp.PosLocal = localGrasp.Position;
+            record.grasp.RotLocal = localGrasp.Rotation;
+            record.grasp.width_m = GraspMath.Round(localGrasp.Width);
+            return record;
+        }
+
         public GripperGrasp LocalGrasp => new GripperGrasp
         {
             Position = grasp.PosLocal,
