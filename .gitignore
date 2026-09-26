@@ -100,7 +100,16 @@ InitTestScene*.unity*
 
 # Secrets (MongoDB connection string, etc.)
 .env
+.env.*
+!.env.example
 
 # Unity scene backups from an editor crash
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
+
+# Python API local environment and caches
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+*.slnx
