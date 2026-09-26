@@ -34,6 +34,19 @@ namespace SortQuest
         [Tooltip("Items that fall below this height count as missed.")]
         [SerializeField] private float despawnBelowY = -5f;
 
+        [Header("Release")]
+        [Tooltip("Caps the throw speed (m/s) applied on release, so jittery hand motion doesn't fling items.")]
+        [SerializeField] private float maxReleaseSpeed = 1.5f;
+
+        [Tooltip("Caps the spin (rad/s) applied on release.")]
+        [SerializeField] private float maxReleaseSpin = 10f;
+
+        [Tooltip("Caps how fast physics pushes overlapping objects apart (Unity's default is 10 m/s).")]
+        [SerializeField] private float maxDepenetrationSpeed = 1f;
+
+        [Tooltip("Under the Meta XR Simulator, released items just drop: its hands swing with the view and fling items.")]
+        [SerializeField] private bool noThrowInSimulator = true;
+
         public event Action<TrashItem> Grabbed;
         public event Action<TrashItem> Released;
         public event Action<TrashItem, SortingBin, bool> Sorted;
@@ -51,11 +64,18 @@ namespace SortQuest
         /// <summary>How long the last grab lasted, in seconds.</summary>
         public float HoldSeconds { get; private set; }
 
+        /// <summary>Identifier of the interactor that started the current grab (PointerEvent.Identifier).</summary>
+        public int GrabberId { get; private set; }
+
+        /// <summary>PointerEvent.Data of the grab; by default the interactor itself.</summary>
+        public object GrabberData { get; private set; }
+
         private Rigidbody body;
         private ConveyorBelt belt;
         private float grabTime;
         private float dropTime;
         private bool fellOffEnd;
+        private bool clampAfterRelease;
 
         private void Awake()
         {
@@ -63,6 +83,7 @@ namespace SortQuest
             body.interpolation = RigidbodyInterpolation.Interpolate;
             // The SDK's "Add Grab Interaction" wizard creates the Rigidbody with gravity off.
             body.useGravity = true;
+            body.maxDepenetrationVelocity = maxDepenetrationSpeed;
             if (grabbable == null)
             {
                 grabbable = GetComponentInChildren<Grabbable>();
@@ -93,11 +114,35 @@ namespace SortQuest
 
         private void Start()
         {
+            IgnorePlayerCollisions();
+
             // Items placed by hand in the scene (not spawned) just fall until they land on a belt.
             if (belt == null && State == TrashItemState.OnBelt)
             {
                 State = TrashItemState.Loose;
                 body.isKinematic = false;
+            }
+        }
+
+        private static bool IsSimulatorRuntime()
+        {
+            return UnityEngine.XR.OpenXR.OpenXRRuntime.name.Contains("Simulator");
+        }
+
+        // The camera rig's locomotion adds a body capsule tagged "Player"; trash dropped near
+        // the player would otherwise bounce off it.
+        private void IgnorePlayerCollisions()
+        {
+            Collider[] ownColliders = GetComponentsInChildren<Collider>();
+            foreach (GameObject player in GameObject.FindGameObjectsWithTag("Player"))
+            {
+                foreach (Collider playerCollider in player.GetComponentsInChildren<Collider>())
+                {
+                    foreach (Collider own in ownColliders)
+                    {
+                        Physics.IgnoreCollision(own, playerCollider);
+                    }
+                }
             }
         }
 
@@ -110,6 +155,25 @@ namespace SortQuest
 
         private void FixedUpdate()
         {
+            // The SDK applies its throw velocity right after our release handler, so cap it on the next step.
+            if (clampAfterRelease)
+            {
+                clampAfterRelease = false;
+                if (State == TrashItemState.Loose && !body.isKinematic)
+                {
+                    if (noThrowInSimulator && IsSimulatorRuntime())
+                    {
+                        body.linearVelocity = Vector3.zero;
+                        body.angularVelocity = Vector3.zero;
+                    }
+                    else
+                    {
+                        body.linearVelocity = Vector3.ClampMagnitude(body.linearVelocity, maxReleaseSpeed);
+                        body.angularVelocity = Vector3.ClampMagnitude(body.angularVelocity, maxReleaseSpin);
+                    }
+                }
+            }
+
             if (State == TrashItemState.OnBelt && belt != null)
             {
                 Vector3 next = body.position + belt.Velocity * Time.fixedDeltaTime;
@@ -140,7 +204,7 @@ namespace SortQuest
                 case PointerEventType.Select:
                     if (State == TrashItemState.OnBelt || State == TrashItemState.Loose)
                     {
-                        BeginHold();
+                        BeginHold(evt);
                     }
                     break;
                 case PointerEventType.Unselect:
@@ -154,9 +218,11 @@ namespace SortQuest
             }
         }
 
-        private void BeginHold()
+        private void BeginHold(PointerEvent evt)
         {
             State = TrashItemState.Held;
+            GrabberId = evt.Identifier;
+            GrabberData = evt.Data;
             grabTime = Time.time;
             WasDropped = false;
             fellOffEnd = false;
@@ -170,6 +236,7 @@ namespace SortQuest
             // The Grabbable restores the kinematic flag it saw at grab time (true if taken off the belt),
             // so switch to dynamic physics here.
             body.isKinematic = false;
+            clampAfterRelease = true;
             Released?.Invoke(this);
         }
 
@@ -204,6 +271,17 @@ namespace SortQuest
 
         private void OnCollisionEnter(Collision collision)
         {
+            HandleContact(collision, true);
+        }
+
+        // Also checked while touching, so an item that slides from the belt's edge onto its top gets picked up.
+        private void OnCollisionStay(Collision collision)
+        {
+            HandleContact(collision, false);
+        }
+
+        private void HandleContact(Collision collision, bool isNewContact)
+        {
             if (State != TrashItemState.Loose)
             {
                 return;
@@ -219,9 +297,10 @@ namespace SortQuest
                 return;
             }
 
-            // Landing back on the belt: counts as a drop, but the item rides on.
+            // Landing on top of the belt: counts as a drop, but the item rides on.
+            // Touching the belt's side doesn't count as being on it.
             ConveyorBelt hitBelt = collision.collider.GetComponentInParent<ConveyorBelt>();
-            if (hitBelt != null && !fellOffEnd)
+            if (hitBelt != null && !fellOffEnd && IsRestingOnTop(collision))
             {
                 MarkDropped();
                 belt = hitBelt;
@@ -229,7 +308,32 @@ namespace SortQuest
                 return;
             }
 
-            MarkDropped();
+            if (isNewContact)
+            {
+                MarkDropped();
+            }
+        }
+
+        private bool IsRestingOnTop(Collision collision)
+        {
+            // Center must be over the surface, not hanging past its edge.
+            Bounds surface = collision.collider.bounds;
+            Vector3 center = body.worldCenterOfMass;
+            if (center.x < surface.min.x || center.x > surface.max.x ||
+                center.z < surface.min.z || center.z > surface.max.z)
+            {
+                return false;
+            }
+
+            // At least one contact must push up, meaning the item sits on the top face.
+            for (int i = 0; i < collision.contactCount; i++)
+            {
+                if (collision.GetContact(i).normal.y > 0.7f)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>Called by a SortingBin when the item lands in it.</summary>

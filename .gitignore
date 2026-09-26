@@ -100,3 +100,7 @@ InitTestScene*.unity*
 
 # Secrets (MongoDB connection string, etc.)
 .env
+
+# Unity scene backups from an editor crash
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta

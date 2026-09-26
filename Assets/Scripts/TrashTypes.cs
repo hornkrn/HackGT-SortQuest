@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace SortQuest
@@ -37,6 +40,50 @@ namespace SortQuest
                 case ItemType.PowerBank: return BinType.Hazardous;
                 default: return BinType.Hazardous;
             }
+        }
+
+        /// <summary>The snake_case id used in grasp records, e.g. "battery_aa".</summary>
+        public static string ItemId(ItemType item)
+        {
+            switch (item)
+            {
+                case ItemType.AluminumCan: return "aluminum_can";
+                case ItemType.PlasticBottle: return "plastic_bottle";
+                case ItemType.CardboardBox: return "cardboard_box";
+                case ItemType.CrumpledPaper: return "crumpled_paper";
+                case ItemType.BatteryAA: return "battery_aa";
+                case ItemType.PowerBank: return "power_bank";
+                default: return item.ToString().ToLowerInvariant();
+            }
+        }
+
+        public static string DisplayName(ItemType item)
+        {
+            switch (item)
+            {
+                case ItemType.AluminumCan: return "Aluminum can";
+                case ItemType.PlasticBottle: return "Plastic bottle";
+                case ItemType.CardboardBox: return "Cardboard box";
+                case ItemType.CrumpledPaper: return "Crumpled paper";
+                case ItemType.BatteryAA: return "AA battery";
+                case ItemType.PowerBank: return "Power bank";
+                default: return item.ToString();
+            }
+        }
+
+        /// <summary>Sign text for a bin: its name, then the items that belong in it.</summary>
+        public static string BinSignText(BinType bin)
+        {
+            IEnumerable<string> items = ((ItemType[])Enum.GetValues(typeof(ItemType)))
+                .Where(item => CorrectBin(item) == bin)
+                .Select(DisplayName);
+            return $"{bin.ToString().ToUpperInvariant()}\n<size=55%>{string.Join(", ", items)}</size>";
+        }
+
+        /// <summary>The id used in grasp records, e.g. "hazardous".</summary>
+        public static string BinId(BinType bin)
+        {
+            return bin.ToString().ToLowerInvariant();
         }
 
         public static Color BinColor(BinType bin)

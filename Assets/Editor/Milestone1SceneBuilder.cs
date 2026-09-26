@@ -11,7 +11,7 @@ using UnityEngine.SceneManagement;
 namespace SortQuest
 {
     /// <summary>
-    /// Menu item that builds the milestone 1 scene objects and trash item prefabs.
+    /// Menu items that build the milestone 1 scene objects and trash item prefabs, and add grasp recording (milestone 2).
     /// Safe to run more than once: objects and assets that already exist (matched by name or path)
     /// are kept as they are, and only empty references are filled in.
     /// Never touches the camera rig or hand tracking building blocks.
@@ -103,6 +103,7 @@ namespace SortQuest
                 BuildBin(bin.Name, bin.Type, bin.Position, scoreBoard);
             }
             BuildSpawner(belt, prefabs, scoreBoard);
+            BuildHeldItemLabel();
 
             if (Object.FindAnyObjectByType<HandGrabInteractor>(FindObjectsInactive.Include) == null)
             {
@@ -114,6 +115,44 @@ namespace SortQuest
             EditorSceneManager.SaveScene(scene);
             AssetDatabase.SaveAssets();
             Debug.Log($"[SortQuest] Milestone 1 scene built and saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Add Grasp Recording (Milestone 2)")]
+        public static void AddGraspRecording()
+        {
+            if (EditorApplication.isPlaying)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Exit Play mode first.", "OK");
+                return;
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            if (string.IsNullOrEmpty(scene.path))
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Open and save the main scene first, then run this again.", "OK");
+                return;
+            }
+            TrashSpawner spawner = Object.FindAnyObjectByType<TrashSpawner>();
+            if (spawner == null)
+            {
+                EditorUtility.DisplayDialog("SortQuest", "Run SortQuest > Build Milestone 1 Scene first.", "OK");
+                return;
+            }
+
+            GameObject go = GetOrCreate("GraspRecording", null, null, out _);
+            GraspDataset dataset = GetOrAdd<GraspDataset>(go, out _);
+            GraspRecorder recorder = GetOrAdd<GraspRecorder>(go, out _);
+            SetIfEmpty(recorder, "dataset", dataset);
+            SetIfEmpty(recorder, "spawner", spawner);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log($"[SortQuest] Grasp recording added and scene saved ({scene.path}).");
+        }
+
+        [MenuItem("SortQuest/Open Grasp Data Folder")]
+        public static void OpenGraspDataFolder()
+        {
+            EditorUtility.RevealInFinder(Application.persistentDataPath + "/");
         }
 
         // ---------- Item prefabs ----------
@@ -224,7 +263,7 @@ namespace SortQuest
             GameObject go = GetOrCreate("ScoreBoard", null, null, out _);
             ScoreBoard scoreBoard = GetOrAdd<ScoreBoard>(go, out _);
 
-            if (Resources.Load<TMP_Settings>("TMP Settings") == null)
+            if (!HasTmpEssentials())
             {
                 Debug.LogWarning("[SortQuest] TMP Essentials aren't imported, so the score label was skipped. " +
                                  "Use Window > TextMeshPro > Import TMP Essential Resources, then run the builder again.");
@@ -318,6 +357,50 @@ namespace SortQuest
             }
             SetIfEmpty(bin, "scoreBoard", scoreBoard);
             SetArrayIfEmpty(bin, "tintRenderers", renderers);
+
+            // Sign on the back edge of the bin; text is filled in at runtime from TrashTypes.
+            if (HasTmpEssentials())
+            {
+                GameObject sign = GetOrCreate("Sign", go.transform, null, out bool signCreated);
+                TextMeshPro signText = GetOrAdd<TextMeshPro>(sign, out bool signAdded);
+                GetOrAdd<Billboard>(sign, out _);
+                if (signCreated || signAdded)
+                {
+                    sign.transform.localPosition = new Vector3(0f, 0.8f, 0.19f);
+                    signText.rectTransform.sizeDelta = new Vector2(0.5f, 0.3f);
+                    signText.fontSize = 0.8f;
+                    signText.alignment = TextAlignmentOptions.Center;
+                    signText.color = TrashTypes.BinColor(type);
+                    signText.text = TrashTypes.BinSignText(type);
+                }
+                SetIfEmpty(bin, "label", signText);
+            }
+        }
+
+        private static void BuildHeldItemLabel()
+        {
+            if (!HasTmpEssentials())
+            {
+                return;
+            }
+            GameObject go = GetOrCreate("HeldItemLabel", null, null, out bool created);
+            TextMeshPro text = GetOrAdd<TextMeshPro>(go, out bool added);
+            GetOrAdd<Billboard>(go, out _);
+            HeldItemLabel label = GetOrAdd<HeldItemLabel>(go, out _);
+            if (created || added)
+            {
+                text.rectTransform.sizeDelta = new Vector2(0.5f, 0.1f);
+                text.fontSize = 0.5f;
+                text.alignment = TextAlignmentOptions.Center;
+                text.text = "Item";
+            }
+            SetIfEmpty(label, "text", text);
+            SetIfEmpty(label, "spawner", Object.FindAnyObjectByType<TrashSpawner>());
+        }
+
+        private static bool HasTmpEssentials()
+        {
+            return Resources.Load<TMP_Settings>("TMP Settings") != null;
         }
 
         private static void BuildSpawner(ConveyorBelt belt, TrashItem[] prefabs, ScoreBoard scoreBoard)

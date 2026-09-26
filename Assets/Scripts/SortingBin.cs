@@ -1,4 +1,5 @@
 using System;
+using TMPro;
 using UnityEngine;
 
 namespace SortQuest
@@ -16,6 +17,9 @@ namespace SortQuest
 
         [Tooltip("Renderers tinted with this bin's color at start. Leave empty to skip.")]
         [SerializeField] private Renderer[] tintRenderers;
+
+        [Tooltip("Optional sign that shows the bin's name and which items go in it.")]
+        [SerializeField] private TMP_Text label;
 
         public event Action<SortingBin, TrashItem, bool> ItemSorted;
 
@@ -47,6 +51,10 @@ namespace SortQuest
                 scoreBoard = FindAnyObjectByType<ScoreBoard>();
             }
             ApplyTint();
+            if (label != null)
+            {
+                label.text = TrashTypes.BinSignText(binType);
+            }
         }
 
         // OnTriggerStay (not Enter) so an item released while already inside the bin still counts.
