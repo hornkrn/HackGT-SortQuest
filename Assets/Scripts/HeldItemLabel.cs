@@ -17,6 +17,7 @@ namespace SortQuest
         [SerializeField] private float heightAbove = 0.12f;
 
         private TrashItem heldItem;
+        private Renderer[] heldGeometry;
 
         private void Awake()
         {
@@ -66,6 +67,7 @@ namespace SortQuest
         private void HandleGrabbed(TrashItem item)
         {
             heldItem = item;
+            heldGeometry = item.GetComponentsInChildren<Renderer>();
             text.text = TrashTypes.DisplayName(item.ItemType);
             text.enabled = true;
         }
@@ -86,7 +88,10 @@ namespace SortQuest
                 text.enabled = false;
                 return;
             }
-            transform.position = heldItem.transform.position + Vector3.up * heightAbove;
+            Vector3 position = heldItem.transform.position;
+            foreach (var renderer in heldGeometry)
+                if (renderer != null && renderer.enabled) position.y = Mathf.Max(position.y, renderer.bounds.max.y);
+            transform.position = position + Vector3.up * heightAbove;
         }
     }
 }
