@@ -36,16 +36,23 @@ namespace SortQuest
 
         [Header("Release")]
         [Tooltip("Caps the throw speed (m/s) applied on release, so jittery hand motion doesn't fling items.")]
-        [SerializeField] private float maxReleaseSpeed = 1.5f;
+        [SerializeField] private float maxReleaseSpeed = 4.5f;
 
         [Tooltip("Caps the spin (rad/s) applied on release.")]
-        [SerializeField] private float maxReleaseSpin = 10f;
+        [SerializeField] private float maxReleaseSpin = 16f;
 
         [Tooltip("Caps how fast physics pushes overlapping objects apart (Unity's default is 10 m/s).")]
         [SerializeField] private float maxDepenetrationSpeed = 1f;
 
         [Tooltip("Under the Meta XR Simulator, released items just drop: its hands swing with the view and fling items.")]
         [SerializeField] private bool noThrowInSimulator = true;
+
+        [Header("Contact stability")]
+        [SerializeField, Min(0f)] private float linearDamping = 0.03f;
+        [SerializeField, Min(0f)] private float angularDamping = 0.35f;
+        [Tooltip("Seconds of stable top contact before the conveyor carries the item again.")]
+        [SerializeField, Min(0f)] private float beltSettleSeconds = 0.12f;
+        private float stableBeltContact;
 
         public event Action<TrashItem> Grabbed;
         public event Action<TrashItem> Released;
@@ -88,6 +95,12 @@ namespace SortQuest
             // The SDK's "Add Grab Interaction" wizard creates the Rigidbody with gravity off.
             body.useGravity = true;
             body.maxDepenetrationVelocity = maxDepenetrationSpeed;
+            body.linearDamping = linearDamping;
+            body.angularDamping = angularDamping;
+            body.maxAngularVelocity = maxReleaseSpin;
+            body.solverIterations = Mathf.Max(body.solverIterations, 8);
+            body.solverVelocityIterations = Mathf.Max(body.solverVelocityIterations, 2);
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
             if (grabbable == null)
             {
                 grabbable = GetComponentInChildren<Grabbable>();
@@ -224,6 +237,8 @@ namespace SortQuest
 
         private void BeginHold(PointerEvent evt)
         {
+            stableBeltContact = 0;
+            clampAfterRelease = false;
             State = TrashItemState.Held;
             GrabberId = evt.Identifier;
             GrabberData = evt.Data;
@@ -237,6 +252,7 @@ namespace SortQuest
         private void EndHold()
         {
             HoldSeconds = Time.time - grabTime;
+            stableBeltContact = 0;
             State = TrashItemState.Loose;
             // The Grabbable restores the kinematic flag it saw at grab time (true if taken off the belt),
             // so switch to dynamic physics here.
@@ -332,15 +348,32 @@ namespace SortQuest
             if (hitBelt != null && !fellOffEnd && IsRestingOnTop(collision))
             {
                 MarkDropped();
-                belt = hitBelt;
-                EnterBelt();
+                // Let the impact and tumbling resolve before changing back to kinematic motion.
+                if (Mathf.Abs(body.linearVelocity.y) < .12f
+                    && (body.linearVelocity - hitBelt.Velocity).sqrMagnitude < .09f
+                    && body.angularVelocity.sqrMagnitude < 1f)
+                    stableBeltContact += Time.fixedDeltaTime;
+                else
+                    stableBeltContact = 0;
+                if (stableBeltContact >= beltSettleSeconds)
+                {
+                    belt = hitBelt;
+                    EnterBelt();
+                    stableBeltContact = 0;
+                }
                 return;
             }
 
+            stableBeltContact = 0;
             if (isNewContact)
             {
                 MarkDropped();
             }
+        }
+
+        private void OnCollisionExit(Collision collision)
+        {
+            if (collision.collider.GetComponentInParent<ConveyorBelt>() != null) stableBeltContact = 0;
         }
 
         private bool IsRestingOnTop(Collision collision)

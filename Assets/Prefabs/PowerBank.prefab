@@ -53,7 +53,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4862994778829891622}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 13537d76c4dbc4f768fbfa0ad8749dd4, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -183,10 +183,13 @@ MonoBehaviour:
   despawnAfterDropSeconds: 3
   despawnAfterSortSeconds: 1.5
   despawnBelowY: -5
-  maxReleaseSpeed: 1.5
-  maxReleaseSpin: 10
+  maxReleaseSpeed: 4.5
+  maxReleaseSpin: 16
   maxDepenetrationSpeed: 1
   noThrowInSimulator: 1
+  linearDamping: 0.03
+  angularDamping: 0.35
+  beltSettleSeconds: 0.12
 --- !u!1 &7459360675646597796
 GameObject:
   m_ObjectHideFlags: 0

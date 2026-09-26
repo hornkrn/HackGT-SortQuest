@@ -102,7 +102,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3371199807496286774}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 0c5729e79ffc1401bb4235ea5b0c10d5, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -184,10 +184,13 @@ MonoBehaviour:
   despawnAfterDropSeconds: 3
   despawnAfterSortSeconds: 1.5
   despawnBelowY: -5
-  maxReleaseSpeed: 1.5
-  maxReleaseSpin: 10
+  maxReleaseSpeed: 4.5
+  maxReleaseSpin: 16
   maxDepenetrationSpeed: 1
   noThrowInSimulator: 1
+  linearDamping: 0.03
+  angularDamping: 0.35
+  beltSettleSeconds: 0.12
 --- !u!1 &6913683673435423757
 GameObject:
   m_ObjectHideFlags: 0
