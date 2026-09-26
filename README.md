@@ -20,6 +20,37 @@ Robots learn to grasp objects from examples, and good examples are slow and expe
 4. **Learn.** For each type of item, the robot picks the grasp that the most successful players agree on, rather than averaging grasps together. Averaging a grasp on the left of a bottle with one on the right would produce a grasp on empty air. With no data yet, the robot guesses, and it often fails.
 5. **Improve.** The robot sorts items itself while the game shows its accuracy and confidence, so players can see their demonstrations making it better.
 
+## How SortQuest is different
+
+Recent research shows VR gameplay data can help train real robots. SortQuest applies that idea to recycling, where robots face a data shortage for new facilities and for rare, dangerous items like lithium-ion batteries. Players sort trash with their own hands, each good grab is saved as a two-finger gripper grasp with a camera image and a success label, and a robot in the same scene learns from those grasps while the player watches it improve.
+
+### Compared with related work
+
+* **Games that teach people to sort.** Games such as EcoQuestVR, a VR game where players sort waste from a conveyor belt, and SEPBO, a research serious game, use sorting to teach players. SortQuest turns that around: human sorting teaches a robot. It also records how each item was gripped, not only which bin it went in. Players still learn which bin each item belongs in along the way.
+* **Crowdsourced and gamified robot data.** The closest work is [Project Kitchen](https://arxiv.org/html/2609.18650), a gamified VR platform that collects manipulation data for kitchen tasks without robot hardware. It pre-trains robot policies on robot-independent cues from gameplay, such as where objects are grasped, then fine-tunes with a few real demonstrations, and it reported about a 10 point gain in simulated success rates along with transfer to real robots. That suggests the approach works; SortQuest applies a similar idea to recycling. Other efforts collect demonstrations by having people control robots: [RoboCade](https://arxiv.org/pdf/2512.21235) adds game mechanics to remote teleoperation of real robots, and Stanford's RoboTurk let remote workers steer robots with a smartphone. The Universal Manipulation Interface (UMI) from Stanford and Columbia records demonstrations with a handheld gripper instead of a robot. Online puzzle games have also been used to have players label properties of unknown objects, helping a robot decide what it can pick up. In SortQuest, players need no robot, controller mapping, or teleoperation, and the game records the grasps themselves.
+* **VR grasp demonstrations with data multiplication.** A 2017 SINTEF study had researchers demonstrate fish grasps in VR, then used domain randomization to expand a few dozen demonstrations into about 76,000 synthetic grasps for a single type of object. SortQuest collects demonstrations from the public through a game, across six item types, and multiplies them in a different way: each good grasp gets small variations that are kept only if they pass the robot's physics checks, and the player sees them as grasps the robot "practiced". We do not yet randomize the objects or the scene the way that study did.
+* **Real recycling robots.** Sorting facilities already use AI robots that learn from camera data gathered in the facility, often from their own pick attempts, and many use suction cups rather than fingers. That data only exists once a robot is running, and dangerous items like lithium-ion batteries, a known cause of fires at sorting facilities, are rare in it. SortQuest is meant to bootstrap grasp data before real data exists, including for hazardous items, and to complement real robot data rather than replace it.
+
+### What SortQuest brings together
+
+We haven't found another project that combines all of these:
+
+* **People teach the robot.** Human sorting is the training signal, and players learn the bins as a side effect.
+* **Natural hands, no robot controls.** Players pick items up with hand tracking. There is no teleoperation, controller mapping, or robot hardware, so anyone at a booth can contribute.
+* **Your grab, shown as a robot grasp.** While you hold an item, a see-through two-finger gripper on it shows how your grab converts into a gripper grasp.
+* **A learning loop you can watch in one game.** A live accuracy chart, per item confidence bars with taught and practiced counts, and an orange ghost gripper that shows where the robot is about to grab. In Teach Me, the robot names the item it did worst on, asks the player to demonstrate it, then tries again, and Results show its success on that item before and after.
+* **Physics checked practice.** Each good human grasp is tried with small variations on a hidden copy of the item, using the robot's own finger checks, and only the variations that work are kept.
+* **Standard, arm-independent data.** Each grasp is saved relative to the object with a success label and the robot camera's color, depth, and item mask images, the kind of data grasp research uses. The robot arm is computed with inverse kinematics and has a real reach limit, but no arm data is needed.
+* **Recycling, including hazardous items.** Batteries and lithium power banks spawn as often as any other item, so demonstrations for dangerous items can be collected safely and in quantity.
+
+### Honest limitations
+
+* **Simulation to reality gap.** The trash is six clean, simple shapes, and only their rotation on the belt varies. Grab success is idealized, with no friction or slipping, and the camera images are rendered. The data is best used for pre-training, then fine-tuned with a small amount of real robot data, which is the usual recipe.
+* **Two-finger gripper only.** Grasps and practiced variations are checked against our gripper's size. Many sorting robots use suction; the recorded grasp center and approach direction could suggest where a suction cup should pick, but we have not tested that.
+* **Hand to gripper conversion.** A thumb and index finger pinch maps well to a two-finger gripper; whole-hand grabs do not.
+* **Noisy players.** The robot learns only from grabs that landed in the correct bin without being dropped. Giving more weight to accurate players is not built yet.
+* **Scale.** Relatively few people own VR headsets, so the near-term setting is a booth, classroom, or museum. Uploading data to a shared server is still in progress.
+
 ## Current status
 
 | Milestone | Contents | Status |

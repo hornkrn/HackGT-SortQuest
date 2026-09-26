@@ -30,6 +30,7 @@ Pitch: "Every time you play, a recycling robot gets better at its job."
 - Keep code simple and readable. Use `[SerializeField]` fields so values can be tuned in the Inspector.
 - Don't add packages without asking.
 - Keep the game playable after each milestone.
+- For positioning, related work, or the pitch (README, slides, judges), read `docs/RELATED_WORK.md` first and follow its rules: no "first" claims, link sources as given, and don't cite items marked "verify". Only claim features that exist in the code.
 
 ## Design decisions
 - Items move kinematically along the belt (`Rigidbody.MovePosition`) and switch to dynamic physics when grabbed or released.
