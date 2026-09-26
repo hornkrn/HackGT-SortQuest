@@ -6,10 +6,27 @@ using UnityEngine.Networking;
 
 namespace SortQuest
 {
-    /// <summary>HTTP access only. MongoDB credentials must stay on the Python server.</summary>
+    /// <summary>
+    /// HTTP access only. MongoDB credentials must stay on the Python server.
+    /// The API address and key come from Assets/Resources/SortQuestApiSettings.json, which is gitignored
+    /// (SortQuest > Configure LAN API writes it) but still packed into builds, so the key is never saved
+    /// in the scene or pushed to Git. Values in that file override the Inspector fields.
+    /// </summary>
     public class SortQuestApi : MonoBehaviour
     {
+        /// <summary>Resources path (no extension) of the local, gitignored settings file.</summary>
+        public const string SettingsResource = "SortQuestApiSettings";
+
+        [Serializable]
+        public class LocalSettings
+        {
+            public string baseUrl;
+            public string apiKey;
+        }
+
         [SerializeField] private string baseUrl = "http://127.0.0.1:8000";
+
+        [Tooltip("Leave empty. The key is read from the gitignored settings file so it is never saved in the scene.")]
         [SerializeField] private string apiKey = "";
         [SerializeField, Min(1)] private int timeoutSeconds = 15;
         public string BaseUrl { get => baseUrl; set => baseUrl = value; }
@@ -21,6 +38,29 @@ namespace SortQuest
         [Serializable] public class Count { public string item_type; public string source; public int total; public int good; }
         [Serializable] public class RobotDay { public string date; public int attempts; public int successes; public double success_rate; }
         [Serializable] public class Stats { public int total; public Count[] counts; public RobotDay[] robot_daily; }
+
+        private void Awake()
+        {
+            TextAsset asset = Resources.Load<TextAsset>(SettingsResource);
+            if (asset == null)
+            {
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    Debug.LogWarning("[SortQuest] No API settings file; run SortQuest > Configure LAN API. Uploads will be rejected.", this);
+                }
+                return;
+            }
+            try
+            {
+                LocalSettings settings = JsonUtility.FromJson<LocalSettings>(asset.text);
+                if (!string.IsNullOrEmpty(settings.baseUrl)) baseUrl = settings.baseUrl;
+                if (!string.IsNullOrEmpty(settings.apiKey)) apiKey = settings.apiKey;
+            }
+            catch (Exception)
+            {
+                Debug.LogWarning("[SortQuest] API settings file is not valid JSON; using Inspector values.", this);
+            }
+        }
 
         public IEnumerator Health(Action<HealthResult> success, Action<string> failure)
             => Request("GET", "/health", null, success, failure);

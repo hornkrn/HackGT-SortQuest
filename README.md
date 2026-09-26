@@ -58,7 +58,7 @@ We haven't found another project that combines all of these:
 | 1 | Conveyor belt, trash items, spawner, sorting bins with score | Done |
 | 2 | Hand to gripper conversion, grasp recording, local grasp dataset | Done |
 | 3 | Grasp policy and a floating robot gripper that sorts items near the end of the belt | Done |
-| 4 | Game flow: intro, human round, training, robot round, teach me (with a robot retry), results | Done |
+| 4 | Game flow: intro, human round, training, robot round, then teach me lessons on the robot's weakest item (each followed by a robot retry) until every item is mastered or the lesson limit is reached, results | Done |
 | 5a | Learning visuals (accuracy chart, confidence bars, ghost grippers, grab dots) and simulation checked grasp augmentation | Done |
 | 5b | FastAPI/MongoDB uploads and Unity LAN client | Implemented; APK testing pending |
 | 6 | Robot camera that saves color, depth, and mask images with each grasp; industrial style gripper; display arm with a real reach limit | Done |
@@ -129,7 +129,7 @@ Before collecting real data on the headset, move any `grasps.jsonl` recorded in 
 
 ## Developer notes: server and MongoDB
 
-The API and Unity networking scripts are implemented. For a fresh clone, Windows/macOS setup, API keys, and Quest LAN configuration, follow [server/README.md](server/README.md). See [test results and remaining hardware checks](server/TEST_RESULTS.md). Run **SortQuest → Configure LAN API** in Unity and save the scene before building; the shared scene has not been wired automatically.
+The API and Unity networking scripts are implemented. For a fresh clone, Windows/macOS setup, API keys, and Quest LAN configuration, follow [server/README.md](server/README.md). See [test results and remaining hardware checks](server/TEST_RESULTS.md). The scene already includes the upload components. On each computer, run **SortQuest → Configure LAN API** once: it writes the API address and key to `Assets/Resources/SortQuestApiSettings.json`, which is gitignored but included in builds, so the key never goes into the scene or Git.
 
 ### Why the game goes through an API
 

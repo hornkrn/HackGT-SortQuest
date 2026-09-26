@@ -18,8 +18,10 @@ namespace SortQuest
 
     /// <summary>
     /// Runs one game: Intro, HumanRound (the player sorts and teaches), Training (recap), RobotRound
-    /// (the robot sorts alone), TeachMe (the player demonstrates the item the robot did worst on),
-    /// a short robot retry on that item, then Results. Loops back to Intro for the next player.
+    /// (the robot sorts alone), then lessons: TeachMe (the player demonstrates the robot's weakest item)
+    /// followed by a short robot retry on that item, repeated until the robot has mastered every item
+    /// or the lesson limit is reached. Then Results, and back to Intro for the next player.
+    /// Picking the weakest item each time is active learning: new data goes where the robot is worst.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -55,12 +57,25 @@ namespace SortQuest
         [Tooltip("During the robot's turn it picks from this point on the belt onward (0 = start, 1 = end).")]
         [SerializeField, Range(0f, 1f)] private float robotPickZoneStart = 0.25f;
 
+        [Header("Keep teaching until mastered")]
+        [Tooltip("An item is mastered when the robot's latest tries on it succeed at least this often.")]
+        [SerializeField, Range(0f, 1f)] private float masteryRate = 0.6f;
+
+        [Tooltip("...over at least this many tries.")]
+        [SerializeField, Min(1)] private int masteryMinAttempts = 2;
+
+        [Tooltip("Go to Results after this many lessons even if some items aren't mastered (0 = no limit).")]
+        [SerializeField, Min(0)] private int maxLessons = 6;
+
         [Tooltip("After Results, start again at Intro for the next player.")]
         [SerializeField] private bool loopForNextPlayer = true;
 
         public event Action<GameState> StateChanged;
 
         public GameState State { get; private set; }
+
+        /// <summary>True when the robot mastered every item before the lesson limit.</summary>
+        public bool Certified { get; private set; }
 
         /// <summary>The item the robot did worst on, chosen at the start of TeachMe.</summary>
         public ItemType? TeachItem { get; private set; }
@@ -72,6 +87,12 @@ namespace SortQuest
         private float nextStatusRefresh;
         private int goodGraspsThisRound;
         private int goodGraspsTaught;
+        private int goodGraspsTaughtTotal;
+        private bool finishRequested;
+        private int lessonsGiven;
+
+        // Items taught in this game, in order, each listed once (for Results).
+        private readonly List<ItemType> lessons = new List<ItemType>();
         private int robotRoundAttempts;
         private int robotRoundSuccesses;
         private int variationsTried;
@@ -130,7 +151,7 @@ namespace SortQuest
                     if (timeUp) SetState(GameState.RobotRound);
                     break;
                 case GameState.RobotRound:
-                    if (timeUp) SetState(IsRetry ? GameState.Results : GameState.TeachMe);
+                    if (timeUp) SetState(NextAfterRobotRound());
                     break;
                 case GameState.TeachMe:
                     if (timeUp || goodGraspsTaught >= teachTarget)
@@ -150,6 +171,12 @@ namespace SortQuest
             }
         }
 
+        [ContextMenu("Finish teaching (go to Results after this step)")]
+        public void FinishTeaching()
+        {
+            finishRequested = true;
+        }
+
         [ContextMenu("Skip to next state")]
         public void SkipToNextState()
         {
@@ -162,7 +189,11 @@ namespace SortQuest
             State = state;
             stateStartTime = Time.time;
             Enter(state);
-            Debug.Log($"[SortQuest] Game state: {state}{(state == GameState.RobotRound && IsRetry ? " (retry on " + TeachItem + ")" : "")}");
+            string detail = state == GameState.RobotRound && IsRetry ? $" (retry on {TeachItem})"
+                : state == GameState.TeachMe ? $" (lesson {lessonsGiven}: {TeachItem}, mastered {CountMastered()} of {ItemCount})"
+                : state == GameState.Results ? $" ({(Certified ? "certified" : "not certified")}, mastered {CountMastered()} of {ItemCount})"
+                : "";
+            Debug.Log($"[SortQuest] Game state: {state}{detail}");
             StateChanged?.Invoke(state);
             RefreshStatus();
         }
@@ -181,6 +212,11 @@ namespace SortQuest
                     StopEverything();
                     TeachItem = null;
                     IsRetry = false;
+                    Certified = false;
+                    finishRequested = false;
+                    lessons.Clear();
+                    lessonsGiven = 0;
+                    goodGraspsTaughtTotal = 0;
                     firstRobotRound.Clear();
                     retryRobotRound.Clear();
                     goodGraspsByType.Clear();
@@ -204,6 +240,11 @@ namespace SortQuest
 
                 case GameState.RobotRound:
                     spawner.ClearItems();
+                    if (IsRetry && TeachItem.HasValue)
+                    {
+                        // Only this lesson's tries count as the item's latest result.
+                        retryRobotRound.Remove(TeachItem.Value);
+                    }
                     robotRoundAttempts = 0;
                     robotRoundSuccesses = 0;
                     StartSpawning(IsRetry ? TeachItem : null);
@@ -219,6 +260,9 @@ namespace SortQuest
                     StopEverything();
                     TeachItem = PickTeachItem();
                     goodGraspsTaught = 0;
+                    lessonsGiven++;
+                    lessons.Remove(TeachItem.Value);
+                    lessons.Add(TeachItem.Value);
                     StartSpawning(TeachItem);
                     break;
 
@@ -283,6 +327,7 @@ namespace SortQuest
                      record.item_type == TrashTypes.ItemId(TeachItem.Value))
             {
                 goodGraspsTaught++;
+                goodGraspsTaughtTotal++;
             }
         }
 
@@ -317,23 +362,88 @@ namespace SortQuest
         }
 
         /// <summary>
-        /// The item the robot did worst on in its round. Items it never tried count as a perfect score,
-        /// and ties go to the item with fewer good grasps.
+        /// After the robot's first round or a retry: the next lesson, or Results once every item is mastered,
+        /// the lesson limit is reached, or someone chose to finish.
+        /// </summary>
+        private GameState NextAfterRobotRound()
+        {
+            if (AllMastered())
+            {
+                Certified = true;
+                return GameState.Results;
+            }
+            if (finishRequested || (maxLessons > 0 && lessonsGiven >= maxLessons))
+            {
+                return GameState.Results;
+            }
+            return GameState.TeachMe;
+        }
+
+        /// <summary>The robot's most recent result on an item: its latest lesson's retry, or else its first round.</summary>
+        private Tally LatestTally(ItemType type)
+        {
+            if (retryRobotRound.TryGetValue(type, out Tally retry) && retry.Attempts > 0)
+            {
+                return retry;
+            }
+            return firstRobotRound.TryGetValue(type, out Tally first) ? first : null;
+        }
+
+        private bool IsMastered(ItemType type)
+        {
+            Tally tally = LatestTally(type);
+            return tally != null && tally.Attempts >= masteryMinAttempts &&
+                   (float)tally.Successes / tally.Attempts >= masteryRate;
+        }
+
+        private bool AllMastered()
+        {
+            return CountMastered() == ItemCount;
+        }
+
+        private int CountMastered()
+        {
+            int count = 0;
+            foreach (ItemType type in (ItemType[])Enum.GetValues(typeof(ItemType)))
+            {
+                if (IsMastered(type))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// The next item to teach: not yet mastered, preferring items not taught yet in this game, then the
+        /// lowest latest success rate (items the robot hasn't tried count as 50%), then fewer good grasps.
         /// </summary>
         private ItemType PickTeachItem()
         {
             ItemType best = ItemType.AluminumCan;
+            bool found = false;
+            bool bestTaught = true;
             float bestRate = float.MaxValue;
             int bestGood = int.MaxValue;
             foreach (ItemType type in (ItemType[])Enum.GetValues(typeof(ItemType)))
             {
-                float rate = firstRobotRound.TryGetValue(type, out Tally tally) && tally.Attempts > 0
-                    ? (float)tally.Successes / tally.Attempts
-                    : 1f;
+                if (IsMastered(type))
+                {
+                    continue;
+                }
+                bool taught = lessons.Contains(type);
+                Tally tally = LatestTally(type);
+                float rate = tally != null && tally.Attempts > 0 ? (float)tally.Successes / tally.Attempts : 0.5f;
                 int good = dataset != null ? dataset.CountGood(type) : 0;
-                if (rate < bestRate - 1e-4f || (Mathf.Abs(rate - bestRate) <= 1e-4f && good < bestGood))
+                bool better = !found ||
+                              (bestTaught && !taught) ||
+                              (taught == bestTaught && (rate < bestRate - 1e-4f ||
+                                                        (Mathf.Abs(rate - bestRate) <= 1e-4f && good < bestGood)));
+                if (better)
                 {
                     best = type;
+                    found = true;
+                    bestTaught = taught;
                     bestRate = rate;
                     bestGood = good;
                 }
@@ -400,18 +510,26 @@ namespace SortQuest
                     body.AppendLine(IsRetry && TeachItem.HasValue
                         ? $"Can it grab the {TrashTypes.DisplayName(TeachItem.Value).ToLowerInvariant()} now?"
                         : "Watch it use what you taught it.");
-                    body.Append($"{robotRoundSuccesses} of {robotRoundAttempts} grasps worked");
+                    body.AppendLine($"{robotRoundSuccesses} of {robotRoundAttempts} grasps worked");
+                    body.Append(IsRetry
+                        ? $"Mastered once {masteryRate * 100f:F0}% of its grasps work"
+                        : $"Mastered {CountMastered()} of {ItemCount} items so far");
                     break;
 
                 case GameState.TeachMe:
                     string item = TeachItem.HasValue ? TrashTypes.DisplayName(TeachItem.Value).ToLowerInvariant() : "item";
+                    Tally latest = TeachItem.HasValue ? LatestTally(TeachItem.Value) : null;
+                    string limit = maxLessons > 0 ? $" of up to {maxLessons}" : "";
                     title = $"TEACH ME  {time}";
-                    body.AppendLine($"The robot struggles with the {item}.");
+                    body.AppendLine($"Lesson {lessonsGiven}{limit}. Robot has mastered {CountMastered()} of {ItemCount} items.");
+                    body.AppendLine(latest == null || latest.Attempts == 0
+                        ? $"The robot hasn't tried the {item} yet."
+                        : $"The robot struggles with the {item}.");
                     body.Append($"Show it how! {goodGraspsTaught} of {teachTarget} good grasps");
                     break;
 
                 default:
-                    title = "RESULTS";
+                    title = Certified ? "ROBOT CERTIFIED!" : "RESULTS";
                     AppendResults(body);
                     break;
             }
@@ -425,7 +543,7 @@ namespace SortQuest
                 body.AppendLine($"Your score: {scoreBoard.Score} ({scoreBoard.Correct} correct, " +
                                 $"{scoreBoard.Wrong} wrong, {scoreBoard.Missed} missed)");
             }
-            body.AppendLine($"Good grasps you taught: {goodGraspsThisRound + goodGraspsTaught}");
+            body.AppendLine($"Good grasps you taught: {goodGraspsThisRound + goodGraspsTaughtTotal}");
             if (variationsTried > 0)
             {
                 body.AppendLine($"Variations the robot practiced: {variationsKept} of {variationsTried} worked");
@@ -440,14 +558,17 @@ namespace SortQuest
             }
             body.AppendLine($"Robot's turn: {successes} of {attempts} grasps worked");
 
-            if (TeachItem.HasValue)
+            body.AppendLine($"Robot mastered {CountMastered()} of {ItemCount} items after {lessonsGiven} lessons");
+            foreach (ItemType taught in lessons)
             {
-                firstRobotRound.TryGetValue(TeachItem.Value, out Tally before);
-                retryRobotRound.TryGetValue(TeachItem.Value, out Tally after);
-                body.AppendLine($"{TrashTypes.DisplayName(TeachItem.Value)}: {FormatTally(before)} before your lesson, " +
-                                $"{FormatTally(after)} after");
+                firstRobotRound.TryGetValue(taught, out Tally before);
+                retryRobotRound.TryGetValue(taught, out Tally after);
+                body.AppendLine($"{TrashTypes.DisplayName(taught)}: {FormatTally(before)} before your lesson, " +
+                                $"{FormatTally(after)} after{(IsMastered(taught) ? " (mastered)" : "")}");
             }
         }
+
+        private static int ItemCount => Enum.GetValues(typeof(ItemType)).Length;
 
         private static string FormatTally(Tally tally)
         {

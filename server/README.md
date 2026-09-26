@@ -82,11 +82,12 @@ hotspot if the headset cannot open `/health`.
 
 1. Open the game scene containing `GraspDataset`.
 2. On the API computer, choose **SortQuest → Configure LAN API**. This adds
-   `SortQuestApi` and `DataUploader` to that dataset's GameObject and copies only
-   the LAN address and API key into the Inspector. Save the scene.
-3. If building on another computer, add those two components manually instead.
-   Set **Base Url** to the API computer's address, such as `http://10.90.56.133:8000`,
-   and **Api Key** to `SORTQUEST_API_KEY` from that computer's `.env`.
+   `SortQuestApi` and `DataUploader` to that dataset's GameObject and writes the LAN
+   address and API key to `Assets/Resources/SortQuestApiSettings.json`. That file is
+   gitignored but packed into builds, so the key is never stored in the scene and the
+   scene can be committed safely. Save the scene.
+3. If building on another computer, create that file yourself (it is not in Git):
+   `{"baseUrl": "http://10.90.56.133:8000", "apiKey": "<SORTQUEST_API_KEY from the API computer's .env>"}`.
    In Android Player Settings, set **Allow downloads over HTTP** to **Always
    allowed** (the setup menu does this automatically).
 4. Build/install the Android APK normally. The Android manifest now requests
@@ -102,8 +103,8 @@ computer running the Unity editor, so double-check it when the API is elsewhere.
 
 HTTP and its shared key are for a trusted local network; traffic is unencrypted.
 Use HTTPS before exposing this API over the internet. The APK's API key is a
-shared access gate, not a protected user credential. Do not commit a scene
-containing a key you wish to keep private.
+shared access gate, not a protected user credential. It lives only in the gitignored
+settings file, so never commit `Assets/Resources/SortQuestApiSettings.json`.
 
 ## Use from other Unity scripts
 

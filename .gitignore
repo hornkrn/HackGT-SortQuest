@@ -107,6 +107,10 @@ InitTestScene*.unity*
 /[Aa]ssets/_Recovery/
 /[Aa]ssets/_Recovery.meta
 
+# Local API address and key written by SortQuest > Configure LAN API (included in builds, never committed)
+/[Aa]ssets/[Rr]esources/SortQuestApiSettings.json
+/[Aa]ssets/[Rr]esources/SortQuestApiSettings.json.meta
+
 # Python API local environment and caches
 .venv/
 __pycache__/
