@@ -68,8 +68,16 @@ namespace SortQuest
         [Tooltip("...and their approach directions are within this angle (degrees). Cup roll doesn't matter.")]
         [SerializeField] private float suctionAngleTolerance = 20f;
 
-        [Tooltip("Random guesses tilt the gripper by up to this many degrees around its approach direction.")]
-        [SerializeField] private float randomRollRange = 30f;
+        [Header("Random guesses (no data yet)")]
+        [Tooltip("Guesses tilt the gripper by up to this many degrees around its approach direction. Keep it well " +
+                 "under the fingers' 30 degree contact limit, or tilted pads never grip.")]
+        [SerializeField] private float guessRoll = 10f;
+
+        [Tooltip("Guesses come from above this often (0 to 1). Side approaches at belt height usually hit the belt.")]
+        [SerializeField, Range(0f, 1f)] private float guessFromAbove = 0.6f;
+
+        [Tooltip("How far a guess's center may stray from the item's middle, as a share of the item's half-size.")]
+        [SerializeField, Range(0f, 1f)] private float guessSpread = 0.15f;
 
         [Tooltip("Before each attempt, at most this many learned grasps are collision-checked, best agreed first.")]
         [SerializeField] private int maxFeasibilityChecks = 24;
@@ -273,61 +281,94 @@ namespace SortQuest
         }
 
         /// <summary>
-        /// A random grasp on the item's bounds, approached along one of the item's axes (never from below).
-        /// Two-finger: a random point inside the bounds, closing along a perpendicular axis with a little tilt.
-        /// Suction: a random point on the face the cup approaches, pressing straight in.
+        /// A random guess a real gripper could plausibly make, approached along one of the item's axes (never from
+        /// below, usually from above). It knows nothing about where to grab; it only avoids guesses that can't work:
+        /// Two-finger: near the item's middle, closing across a side that fits between the open fingers, only as
+        /// deep as the fingers reach and not so deep the fingertips hit the belt, with a little tilt.
+        /// Suction: near the middle of the face the cup approaches, pressing straight in.
         /// </summary>
         private GripperGrasp RandomGrasp(TrashItem item, GripperProfile profile)
         {
             Bounds bounds = LocalBounds(item);
-            Quaternion itemRotation = item.transform.rotation;
-
-            var approaches = new List<Vector3>();
-            foreach (Vector3 axis in LocalAxes)
-            {
-                // Approach points toward the item; a positive world y would mean coming up from below the belt.
-                if ((itemRotation * axis).y < 0.3f)
-                {
-                    approaches.Add(axis);
-                }
-            }
-            Vector3 approach = approaches[Random.Range(0, approaches.Count)];
-
-            var perpendiculars = new List<Vector3>();
-            foreach (Vector3 axis in LocalAxes)
-            {
-                if (Mathf.Abs(Vector3.Dot(axis, approach)) < 0.1f)
-                {
-                    perpendiculars.Add(axis);
-                }
-            }
-            Vector3 side = perpendiculars[Random.Range(0, perpendiculars.Count)];
+            Vector3 approach = RandomApproach(item.transform.rotation);
+            float depthExtent = Mathf.Abs(Vector3.Dot(bounds.extents, approach));
+            Vector3 face = bounds.center - approach * depthExtent; // middle of the face the gripper approaches
 
             if (profile.IsSuction)
             {
-                // A point on the face the cup pushes into: the far side of the bounds along -approach.
-                Vector3 onFace = Vector3.Scale(bounds.extents * 0.8f,
-                    new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
-                onFace -= approach * Vector3.Dot(onFace, approach);
-                Vector3 facePoint = bounds.center + onFace - approach * Mathf.Abs(Vector3.Dot(bounds.extents, approach));
+                Vector3 across = RandomPerpendicular(approach);
                 return new GripperGrasp
                 {
-                    Position = facePoint,
-                    Rotation = Quaternion.LookRotation(approach, side),
+                    Position = face + Spread(bounds, approach),
+                    Rotation = Quaternion.LookRotation(approach, across),
                     Width = profile.suction.cupDiameter
                 };
             }
 
-            Vector3 offset = Vector3.Scale(bounds.extents * 0.8f,
-                new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+            // Close across a side that fits between the open fingers, when the item has one.
+            GripperShape fingers = profile.parallel;
+            var fits = new List<Vector3>();
+            var perpendiculars = new List<Vector3>();
+            foreach (Vector3 axis in LocalAxes)
+            {
+                if (Mathf.Abs(Vector3.Dot(axis, approach)) > 0.1f) continue;
+                perpendiculars.Add(axis);
+                if (Mathf.Abs(Vector3.Dot(bounds.size, axis)) < fingers.maxOpening - 2f * fingers.touchSkin) fits.Add(axis);
+            }
+            List<Vector3> sides = fits.Count > 0 ? fits : perpendiculars;
+            Vector3 side = sides[Random.Range(0, sides.Count)];
+
+            // How deep past the approached face: no deeper than the fingers reach before the palm touches the item,
+            // and shallow enough that the fingertips stay above the item's far side (the belt, when from above).
+            float palmReach = fingers.fingerLength - fingers.fingertipPastGrasp - 0.005f;
+            float tipLimit = 2f * depthExtent - fingers.fingertipPastGrasp - 0.003f;
+            float deepest = Mathf.Max(0.002f, Mathf.Min(palmReach, tipLimit));
+            float depth = Random.Range(0.5f * deepest, deepest);
+
             Quaternion rotation = Quaternion.LookRotation(approach, Vector3.Cross(approach, side)) *
-                                  Quaternion.Euler(0f, 0f, Random.Range(-randomRollRange, randomRollRange));
+                                  Quaternion.Euler(0f, 0f, Random.Range(-guessRoll, guessRoll));
             return new GripperGrasp
             {
-                Position = bounds.center + offset,
+                Position = face + approach * depth + Spread(bounds, approach),
                 Rotation = rotation,
-                Width = Mathf.Abs(Vector3.Dot(bounds.size, side))
+                Width = Mathf.Min(Mathf.Abs(Vector3.Dot(bounds.size, side)), fingers.maxOpening)
             };
+        }
+
+        /// <summary>An item axis to approach along: never from below, and from above with probability guessFromAbove.</summary>
+        private Vector3 RandomApproach(Quaternion itemRotation)
+        {
+            var approaches = new List<Vector3>();
+            Vector3 fromAbove = Vector3.zero;
+            float lowest = float.MaxValue;
+            foreach (Vector3 axis in LocalAxes)
+            {
+                // The approach points toward the item; a positive world y would mean coming up from below the belt.
+                float y = (itemRotation * axis).y;
+                if (y >= 0.3f) continue;
+                approaches.Add(axis);
+                if (y < lowest) { lowest = y; fromAbove = axis; }
+            }
+            if (lowest < -0.7f && Random.value < guessFromAbove) return fromAbove;
+            return approaches[Random.Range(0, approaches.Count)];
+        }
+
+        private static Vector3 RandomPerpendicular(Vector3 approach)
+        {
+            var perpendiculars = new List<Vector3>();
+            foreach (Vector3 axis in LocalAxes)
+            {
+                if (Mathf.Abs(Vector3.Dot(axis, approach)) < 0.1f) perpendiculars.Add(axis);
+            }
+            return perpendiculars[Random.Range(0, perpendiculars.Count)];
+        }
+
+        /// <summary>A small random offset from the item's middle, across the approach direction only.</summary>
+        private Vector3 Spread(Bounds bounds, Vector3 approach)
+        {
+            Vector3 offset = Vector3.Scale(bounds.extents * guessSpread,
+                new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f)));
+            return offset - approach * Vector3.Dot(offset, approach);
         }
 
         /// <summary>The item's bounds in its own frame, in meters (scale applied, rotation not).</summary>
