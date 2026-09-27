@@ -15,7 +15,8 @@ namespace SortQuest
         RobotRound,
         TeachMe,
         Results,
-        Tutorial
+        Tutorial,
+        TutorialChoice
     }
 
     /// <summary>
@@ -186,6 +187,7 @@ namespace SortQuest
             {
                 case GameState.Menu:
                     break; // Waits for START.
+                case GameState.TutorialChoice:
                 case GameState.Tutorial:
                     break; // GuidedTutorial advances after each item is sorted.
                 case GameState.Intro:
@@ -228,7 +230,19 @@ namespace SortQuest
         {
             if (State == GameState.Menu)
             {
-                SetState(GameState.Tutorial);
+                SetState(HasMenu ? GameState.TutorialChoice : GameState.Tutorial);
+            }
+        }
+
+        /// <summary>Answer the tutorial prompt once; duplicate grabs cannot restart a round.</summary>
+        public void ChooseTutorial(bool wantsTutorial)
+        {
+            if (State != GameState.TutorialChoice) return;
+            if (wantsTutorial) SetState(GameState.Tutorial);
+            else
+            {
+                spawner.Belt.Running = true;
+                SetState(GameState.HumanRound);
             }
         }
 
@@ -307,6 +321,7 @@ namespace SortQuest
                     break;
 
                 case GameState.Intro:
+                case GameState.TutorialChoice:
                 case GameState.Tutorial:
                     StopEverything();
                     ResetRun();
@@ -666,6 +681,11 @@ namespace SortQuest
                     {
                         body.Append($"The robot is studying {augmenter.PendingGrasps} grasps for this gripper...");
                     }
+                    break;
+
+                case GameState.TutorialChoice:
+                    title = "WOULD YOU LIKE A TUTORIAL?";
+                    body.AppendLine("Grab YES to learn, or NO to start playing.");
                     break;
 
                 case GameState.Tutorial:

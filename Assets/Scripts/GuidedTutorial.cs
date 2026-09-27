@@ -101,7 +101,7 @@ namespace SortQuest
                     if (retry)
                     {
                         yield return Fade(1f, 0f, fadeSeconds);
-                        yield return Speak("retry");
+                        yield return Speak("retry", true);
                     }
                     else
                     {
@@ -112,9 +112,8 @@ namespace SortQuest
                         spawner.Belt.Running = false;
                     }
                     game.SetTutorialStatus($"ITEM {i + 1} OF {TutorialItems.Length}\n{TrashTypes.DisplayName(type)} → {target.BinType}\nGrab it and place it in the glowing bin.");
-                    // Outcomes are already subscribed: an early sort is remembered, but the voice
-                    // finishes before moving to the next step. No overlapping prompts.
-                    yield return Speak("items/" + TrashTypes.ItemId(type));
+                    // If the player already finished during arrival or retry, do not start a stale prompt.
+                    yield return Speak("items/" + TrashTypes.ItemId(type), true);
                     while (result == AttemptResult.Waiting)
                     {
                         if (currentItem == null) result = AttemptResult.Retry;
@@ -164,8 +163,9 @@ namespace SortQuest
             return true;
         }
 
-        private IEnumerator Speak(string clipName)
+        private IEnumerator Speak(string clipName, bool interruptOnOutcome = false)
         {
+            if (interruptOnOutcome && AttemptFinished()) yield break;
             AudioClip clip = LoadClip(clipName);
             if (clip == null)
             {
@@ -177,7 +177,11 @@ namespace SortQuest
             clip.LoadAudioData();
             float deadline = Time.realtimeSinceStartup + 5f;
             while (clip.loadState == AudioDataLoadState.Loading && Time.realtimeSinceStartup < deadline)
+            {
+                if (interruptOnOutcome && AttemptFinished()) yield break;
                 yield return null;
+            }
+            if (interruptOnOutcome && AttemptFinished()) yield break;
             if (clip.loadState != AudioDataLoadState.Loaded)
             {
                 Debug.LogError($"[SortQuest] Could not load tutorial audio: {clipName}.", this);
@@ -186,7 +190,23 @@ namespace SortQuest
             voice.clip = clip;
             voice.Play();
             Debug.Log($"[SortQuest] Tutorial narration: {clipName} ({clip.length:F1}s)", this);
-            yield return new WaitForSecondsRealtime(clip.length);
+            float finishAt = Time.realtimeSinceStartup + clip.length;
+            while (Time.realtimeSinceStartup < finishAt)
+            {
+                if (interruptOnOutcome && AttemptFinished())
+                {
+                    voice.Stop();
+                    yield break;
+                }
+                yield return null;
+            }
+        }
+
+        private bool AttemptFinished()
+        {
+            if (result == AttemptResult.Waiting && currentItem == null)
+                result = AttemptResult.Retry;
+            return result != AttemptResult.Waiting;
         }
 
         private static AudioClip LoadClip(string clipName)

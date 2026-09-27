@@ -7,6 +7,7 @@ namespace SortQuest.Editor
     [InitializeOnLoad]
     public static class TutorialPreview
     {
+        private const string ShowChoice = "SortQuest.ShowTutorialChoice";
         private const string Pending = "SortQuest.StartTutorialPreview";
 
         static TutorialPreview()
@@ -24,6 +25,19 @@ namespace SortQuest.Editor
         [MenuItem("SortQuest/Tutorial/Start narrated tutorial")]
         private static void StartPreview()
         {
+            SessionState.SetBool(ShowChoice, false);
+            BeginPreview();
+        }
+
+        [MenuItem("SortQuest/Tutorial/Show Yes-No choice")]
+        private static void PreviewChoice()
+        {
+            SessionState.SetBool(ShowChoice, true);
+            BeginPreview();
+        }
+
+        private static void BeginPreview()
+        {
             if (EditorApplication.isPlaying) StartTutorial();
             else
             {
@@ -37,7 +51,9 @@ namespace SortQuest.Editor
             if (!EditorApplication.isPlaying) return;
             var game = Object.FindAnyObjectByType<GameManager>();
             if (game == null) { Debug.LogError("Open SampleScene before starting the tutorial."); return; }
-            game.SetState(GameState.Tutorial);
+            var menu = Object.FindAnyObjectByType<MainMenu>();
+            game.SetState(SessionState.GetBool(ShowChoice, false) && menu != null && menu.Ready
+                ? GameState.TutorialChoice : GameState.Tutorial);
         }
     }
 }

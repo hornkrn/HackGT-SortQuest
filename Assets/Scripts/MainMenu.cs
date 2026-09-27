@@ -7,11 +7,13 @@ namespace SortQuest
 {
     /// <summary>
     /// The in-VR menu: a small table with one grabbable block per gripper and a START block.
-    /// Grabbing a gripper block selects that gripper (the robot changes right away); grabbing START begins the tutorial.
-    /// After Results, two blocks offer KEEP IMPROVING (more lessons) or MENU. Shown only in the Menu and Results states.
+    /// Grabbing a gripper block selects that gripper (the robot changes right away); grabbing START asks whether to play the tutorial.
+    /// After Results, two blocks offer KEEP IMPROVING (more lessons) or MENU. The tutorial prompt is shown between START and gameplay.
     /// </summary>
     public class MainMenu : MonoBehaviour
     {
+        public const string TutorialYesId = "tutorial_yes";
+        public const string TutorialNoId = "tutorial_no";
         public const string StartId = "start";
         public const string KeepImprovingId = "keep_improving";
         public const string BackToMenuId = "back_to_menu";
@@ -47,6 +49,8 @@ namespace SortQuest
 
         private Transform menuRoot;
         private Transform resultsRoot;
+        private Transform tutorialRoot;
+        private bool actionPending;
         private readonly Dictionary<string, ChoiceBlock> gripperBlocks = new Dictionary<string, ChoiceBlock>();
         private readonly Dictionary<string, TextMeshPro> gripperLabels = new Dictionary<string, TextMeshPro>();
         private float placeUntil;
@@ -94,6 +98,8 @@ namespace SortQuest
             menuRoot.SetParent(transform, false);
             resultsRoot = new GameObject("ResultsChoices").transform;
             resultsRoot.SetParent(transform, false);
+            tutorialRoot = new GameObject("TutorialChoices").transform;
+            tutorialRoot.SetParent(transform, false);
 
             uiMaterial = VizUtil.FallbackMaterial();
             spacing = Mathf.Max(spacing, .21f);
@@ -101,6 +107,16 @@ namespace SortQuest
             float width = Mathf.Max(0.4f, spacing * profiles.Count + 0.06f);
             BuildTable(menuRoot, width);
             BuildTable(resultsRoot, 0.45f);
+            BuildTable(tutorialRoot, 0.6f);
+            AddBlock(tutorialRoot, TutorialYesId, new Vector3(-.16f, 0, 0), startColor);
+            AddLabel(tutorialRoot, new Vector3(-.16f, 0, 0), "YES\n<size=65%>Teach me</size>");
+            AddBlock(tutorialRoot, TutorialNoId, new Vector3(.16f, 0, 0), keepImprovingColor);
+            AddLabel(tutorialRoot, new Vector3(.16f, 0, 0), "NO\n<size=65%>Start game</size>");
+            var question = VizUtil.CreateText("Tutorial question", tutorialRoot, new Vector3(0, .38f, .07f),
+                new Vector2(.8f, .18f), .48f, TextAlignmentOptions.Center);
+            question.text = "WOULD YOU LIKE\nA TUTORIAL?";
+            FacilityUi.Style(question, .48f, true);
+            FacilityUi.Panel(tutorialRoot, new Vector2(.85f, .22f), new Vector3(0, .38f, .07f), uiMaterial);
 
             // One block per gripper in the far row, START in the near row.
             for (int i = 0; i < profiles.Count; i++)
@@ -167,13 +183,17 @@ namespace SortQuest
 
         private void HandleChosen(ChoiceBlock block)
         {
+            if (actionPending) return;
             switch (block.ChoiceId)
             {
+                case TutorialYesId:
+                case TutorialNoId:
                 case StartId:
                 case KeepImprovingId:
                 case BackToMenuId:
                     // These hide the block the player is holding. Wait a frame so the Interaction SDK finishes
                     // registering the grab first; hiding it mid-grab makes the SDK's throw handler throw.
+                    actionPending = true;
                     StartCoroutine(ActNextFrame(block.ChoiceId));
                     break;
                 default:
@@ -185,8 +205,15 @@ namespace SortQuest
         private IEnumerator ActNextFrame(string choiceId)
         {
             yield return null;
+            actionPending = false;
             switch (choiceId)
             {
+                case TutorialYesId:
+                    game.ChooseTutorial(true);
+                    break;
+                case TutorialNoId:
+                    game.ChooseTutorial(false);
+                    break;
                 case StartId:
                     game.StartGame();
                     break;
@@ -210,13 +237,14 @@ namespace SortQuest
             {
                 return;
             }
-            if (state == GameState.Menu || state == GameState.Results)
+            if (state == GameState.Menu || state == GameState.Results || state == GameState.TutorialChoice)
             {
                 placeUntil = Time.time + settleSeconds;
                 PlaceForPlayer();
             }
             menuRoot.gameObject.SetActive(state == GameState.Menu);
             resultsRoot.gameObject.SetActive(state == GameState.Results);
+            tutorialRoot.gameObject.SetActive(state == GameState.TutorialChoice);
             if (state == GameState.Menu)
             {
                 RefreshLabels();
