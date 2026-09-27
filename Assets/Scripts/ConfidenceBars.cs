@@ -31,6 +31,7 @@ namespace SortQuest
         private TextMeshPro[] labels;
         private Transform[] fills;
         private TextMeshPro title;
+        private TextMeshPro[] values;
 
         private void Awake()
         {
@@ -61,7 +62,9 @@ namespace SortQuest
 
         private void Build()
         {
+            rowHeight = Mathf.Max(rowHeight, .105f);
             types = (ItemType[])Enum.GetValues(typeof(ItemType));
+            values = new TextMeshPro[types.Length];
             labels = new TextMeshPro[types.Length];
             fills = new Transform[types.Length];
 
@@ -69,9 +72,11 @@ namespace SortQuest
             float left = -totalWidth * 0.5f;
             float top = rowHeight * types.Length * 0.5f;
 
+            FacilityUi.Panel(transform, new Vector2(totalWidth + .1f, rowHeight * types.Length + .28f), new Vector3(0, .035f, 0), material);
             title = VizUtil.CreateText("Title", transform, new Vector3(0f, top + 0.08f, 0f),
                 new Vector2(totalWidth, 0.12f), 0.5f, TextAlignmentOptions.Center);
-            title.text = "What the robot has learned";
+            FacilityUi.Style(title, .6f, true);
+            title.text = "GRASP AGREEMENT";
 
             for (int i = 0; i < types.Length; i++)
             {
@@ -79,10 +84,14 @@ namespace SortQuest
                 labels[i] = VizUtil.CreateText(types[i] + "Label", transform, new Vector3(left + labelWidth * 0.5f, y, 0f),
                     new Vector2(labelWidth, rowHeight), 0.3f, TextAlignmentOptions.Left);
 
+                FacilityUi.Style(labels[i], .45f);
+                values[i] = VizUtil.CreateText(types[i] + "Value", transform, new Vector3(left + labelWidth + barWidth * .5f, y + .028f, -.005f),
+                    new Vector2(barWidth, .05f), .25f, TextAlignmentOptions.Right);
+                values[i].color = FacilityUi.Muted;
                 MeshRenderer background = VizUtil.CreateShape(types[i] + "Background", transform, VizUtil.CubeMesh, material,
-                    new Color(1f, 1f, 1f, 0.15f));
-                background.transform.localPosition = new Vector3(left + labelWidth + barWidth * 0.5f, y, 0.002f);
-                background.transform.localScale = new Vector3(barWidth, rowHeight * 0.5f, 0.002f);
+                    new Color(.15f, .23f, .26f));
+                background.transform.localPosition = new Vector3(left + labelWidth + barWidth * 0.5f, y - .015f, 0.002f);
+                background.transform.localScale = new Vector3(barWidth, rowHeight * 0.22f, 0.002f);
 
                 Color binColor = TrashTypes.BinColor(TrashTypes.CorrectBin(types[i]));
                 MeshRenderer fill = VizUtil.CreateShape(types[i] + "Fill", transform, VizUtil.CubeMesh, material, binColor);
@@ -109,7 +118,7 @@ namespace SortQuest
         {
             float left = -(labelWidth + barWidth) * 0.5f;
             float top = rowHeight * types.Length * 0.5f;
-            title.text = $"What the robot has learned\n<size=60%>{GripperCatalog.CurrentOrStandard(catalog).displayName} gripper</size>";
+            title.text = $"GRASP AGREEMENT\n<size=60%>{GripperCatalog.CurrentOrStandard(catalog).displayName} • learned consistency</size>";
             for (int i = 0; i < types.Length; i++)
             {
                 float y = top - rowHeight * (i + 0.5f);
@@ -128,17 +137,18 @@ namespace SortQuest
                         }
                     }
                     int practiced = choice.GoodCount - choice.HumanCount;
-                    labels[i].text = $"{itemName}  <size=75%>{taught} taught, {practiced} practiced, " +
-                                     $"{confidence * 100f:F0}% sure</size>";
+                    labels[i].text = $"{itemName}\n<size=65%>{taught} taught • {practiced} practiced</size>";
+                    values[i].text = $"{confidence * 100f:F0}%";
                 }
                 else
                 {
-                    labels[i].text = $"{itemName}  <size=75%>no data yet</size>";
+                    labels[i].text = itemName;
+                    values[i].text = "—";
                 }
 
                 float fillWidth = Mathf.Max(0.001f, barWidth * confidence);
-                fills[i].localPosition = new Vector3(left + labelWidth + fillWidth * 0.5f, y, 0f);
-                fills[i].localScale = new Vector3(fillWidth, rowHeight * 0.5f, 0.004f);
+                fills[i].localPosition = new Vector3(left + labelWidth + fillWidth * 0.5f, y - .015f, 0f);
+                fills[i].localScale = new Vector3(fillWidth, rowHeight * 0.22f, 0.004f);
             }
         }
     }

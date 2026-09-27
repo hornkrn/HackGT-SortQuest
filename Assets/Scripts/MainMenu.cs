@@ -50,6 +50,8 @@ namespace SortQuest
         private readonly Dictionary<string, ChoiceBlock> gripperBlocks = new Dictionary<string, ChoiceBlock>();
         private readonly Dictionary<string, TextMeshPro> gripperLabels = new Dictionary<string, TextMeshPro>();
         private float placeUntil;
+        private Material uiMaterial;
+        private TextMeshPro selectedDetail;
 
         private void Awake()
         {
@@ -93,6 +95,8 @@ namespace SortQuest
             resultsRoot = new GameObject("ResultsChoices").transform;
             resultsRoot.SetParent(transform, false);
 
+            uiMaterial = VizUtil.FallbackMaterial();
+            spacing = Mathf.Max(spacing, .21f);
             IReadOnlyList<GripperProfile> profiles = catalog.Profiles;
             float width = Mathf.Max(0.4f, spacing * profiles.Count + 0.06f);
             BuildTable(menuRoot, width);
@@ -107,14 +111,22 @@ namespace SortQuest
                 gripperBlocks[profile.id] = block;
                 gripperLabels[profile.id] = AddLabel(menuRoot, position, "");
             }
-            AddBlock(menuRoot, StartId, new Vector3(0f, 0f, -0.1f), startColor);
-            AddLabel(menuRoot, new Vector3(0f, 0f, -0.1f), "START").fontSize = 0.4f;
+            AddBlock(menuRoot, StartId, new Vector3(0f, -.06f, -.22f), startColor);
+            AddLabel(menuRoot, new Vector3(0f, -.06f, -.22f), "START").fontSize = 0.4f;
 
             AddBlock(resultsRoot, KeepImprovingId, new Vector3(-0.12f, 0f, 0f), keepImprovingColor);
             AddLabel(resultsRoot, new Vector3(-0.12f, 0f, 0f), "KEEP\nIMPROVING");
             AddBlock(resultsRoot, BackToMenuId, new Vector3(0.12f, 0f, 0f), backToMenuColor);
             AddLabel(resultsRoot, new Vector3(0.12f, 0f, 0f), "MENU");
 
+            var heading = VizUtil.CreateText("Menu heading", menuRoot, new Vector3(0, .43f, .07f),
+                new Vector2(width, .08f), .55f, TextAlignmentOptions.Center);
+            heading.text = "SELECT YOUR GRIPPER";
+            FacilityUi.Style(heading, .55f, true);
+            selectedDetail = VizUtil.CreateText("Selected gripper details", menuRoot, new Vector3(0, .32f, .07f),
+                new Vector2(width, .12f), .32f, TextAlignmentOptions.Center);
+            FacilityUi.Style(selectedDetail, .32f);
+            FacilityUi.Panel(menuRoot, new Vector2(width, .25f), new Vector3(0, .37f, .07f), uiMaterial);
             RefreshLabels();
         }
 
@@ -146,8 +158,9 @@ namespace SortQuest
         private TextMeshPro AddLabel(Transform parent, Vector3 blockPosition, string text)
         {
             TextMeshPro label = VizUtil.CreateText("Label", parent, blockPosition + new Vector3(0f, 0.12f, 0f),
-                new Vector2(0.16f, 0.12f), 0.28f, TextAlignmentOptions.Center);
-            label.gameObject.AddComponent<Billboard>();
+                new Vector2(0.19f, 0.11f), 0.34f, TextAlignmentOptions.Center);
+            FacilityUi.Style(label, .34f);
+            FacilityUi.Panel(label.transform, new Vector2(.19f, .11f), Vector3.zero, uiMaterial);
             label.text = text;
             return label;
         }
@@ -231,6 +244,8 @@ namespace SortQuest
             transform.position = position;
         }
 
+        private void OnDestroy() { if (uiMaterial != null) { if (Application.isPlaying) Destroy(uiMaterial); else DestroyImmediate(uiMaterial); } }
+
         private void RefreshLabels()
         {
             string current = GripperCatalog.CurrentOrStandard(catalog).id;
@@ -242,9 +257,10 @@ namespace SortQuest
                 }
                 if (gripperLabels.TryGetValue(profile.id, out TextMeshPro label))
                 {
-                    string badge = progress != null ? progress.Badge(profile.id) : "";
-                    string selected = profile.id == current ? "<b>SELECTED</b>\n" : "";
-                    label.text = $"{selected}{profile.displayName}\n<size=70%>{profile.description}\n{badge}</size>";
+                    string selected = profile.id == current ? "<color=#59D9B8>SELECTED</color>" : "GRAB TO SELECT";
+                    label.text = $"<b>{profile.displayName}</b>\n<size=58%>{selected}</size>";
+                    if (profile.id == current && selectedDetail != null)
+                        selectedDetail.text = $"{profile.description}  •  {(progress != null ? progress.Badge(profile.id) : "Ready")}\n<size=85%>Grab a choice, then grab START</size>";
                 }
             }
         }

@@ -36,6 +36,8 @@ namespace SortQuest
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private Rigidbody body;
         private Renderer blockRenderer;
+        private Renderer indicator;
+        private Material indicatorMaterial;
         private Vector3 homePosition;
         private Quaternion homeRotation;
         private Vector3 homeScale;
@@ -49,6 +51,19 @@ namespace SortQuest
             body.useGravity = false;
             blockRenderer = GetComponent<Renderer>();
             if (grabbable == null) grabbable = GetComponentInChildren<Grabbable>();
+            indicatorMaterial = VizUtil.FallbackMaterial();
+            var face = VizUtil.CreateShape("Inset control face", transform, VizUtil.QuadMesh, indicatorMaterial, FacilityUi.Ink);
+            face.transform.localPosition = new Vector3(0, 0, -.505f);
+            face.transform.localScale = new Vector3(.78f, .78f, 1);
+            indicator = VizUtil.CreateShape("Selection indicator", transform, VizUtil.QuadMesh, indicatorMaterial, baseColor);
+            indicator.transform.localPosition = new Vector3(0, -.29f, -.51f);
+            indicator.transform.localScale = new Vector3(.55f, .045f, 1);
+            foreach (float x in new[] { -.16f, .16f })
+            {
+                var glyph = VizUtil.CreateShape("Grip symbol", transform, VizUtil.QuadMesh, indicatorMaterial, Color.white);
+                glyph.transform.localPosition = new Vector3(x, .04f, -.51f);
+                glyph.transform.localScale = new Vector3(.09f, .29f, 1);
+            }
             SetHome();
             ApplyColor();
         }
@@ -124,6 +139,8 @@ namespace SortQuest
             transform.localScale = homeScale;
         }
 
+        private void OnDestroy() { if (indicatorMaterial != null) { if (Application.isPlaying) Destroy(indicatorMaterial); else DestroyImmediate(indicatorMaterial); } }
+
         private void ApplyColor()
         {
             if (blockRenderer == null)
@@ -137,6 +154,7 @@ namespace SortQuest
             blockRenderer.GetPropertyBlock(block);
             block.SetColor(BaseColorId, color);
             blockRenderer.SetPropertyBlock(block);
+            if (indicator != null) VizUtil.SetColor(indicator, Selected ? FacilityUi.Accent : baseColor * .45f);
         }
     }
 }

@@ -35,6 +35,8 @@ namespace SortQuest
         private readonly List<bool> results = new List<bool>();
         private LineRenderer line;
         private TextMeshPro title;
+        private TextMeshPro empty;
+        private Transform latestDot;
 
         private void Awake()
         {
@@ -58,6 +60,7 @@ namespace SortQuest
 
         private void Build()
         {
+            FacilityUi.Panel(transform, new Vector2(width + .3f, height + .38f), new Vector3(-.03f, .035f, 0), material);
             // Chart area runs from (0, 0) to (width, height), centered on this object.
             var origin = new Vector3(-width * 0.5f, -height * 0.5f, 0f);
 
@@ -74,16 +77,24 @@ namespace SortQuest
             half.positionCount = 2;
             half.SetPositions(new[] { origin + new Vector3(0f, height * 0.5f, 0f), origin + new Vector3(width, height * 0.5f, 0f) });
 
-            line = VizUtil.CreateLine("Accuracy", transform, material, lineColor, 0.01f);
+            line = VizUtil.CreateLine("Accuracy", transform, material, FacilityUi.Accent, 0.008f);
+            line.numCornerVertices = 3;
+            line.numCapVertices = 3;
+            latestDot = VizUtil.CreateShape("Latest sample", transform, VizUtil.QuadMesh, material, FacilityUi.Accent).transform;
+            latestDot.localScale = Vector3.one * .018f;
+            var axisLabel = VizUtil.CreateText("Attempt axis", transform, new Vector3(0, -height * .5f - .06f, 0), new Vector2(width, .05f), .25f, TextAlignmentOptions.Center);
+            axisLabel.text = "ATTEMPTS →"; axisLabel.color = FacilityUi.Muted;
+            empty = VizUtil.CreateText("Empty state", transform, Vector3.zero, new Vector2(width, .15f), .32f, TextAlignmentOptions.Center);
+            empty.text = "Waiting for the first attempt"; empty.color = FacilityUi.Muted;
 
             VizUtil.CreateText("Label100", transform, origin + new Vector3(-0.06f, height, 0f), new Vector2(0.12f, 0.05f),
-                0.25f, TextAlignmentOptions.Right).text = "100%";
+                0.35f, TextAlignmentOptions.Right).text = "100%";
             VizUtil.CreateText("Label0", transform, origin + new Vector3(-0.06f, 0f, 0f), new Vector2(0.12f, 0.05f),
-                0.25f, TextAlignmentOptions.Right).text = "0%";
+                0.35f, TextAlignmentOptions.Right).text = "0%";
 
             title = VizUtil.CreateText("Title", transform, new Vector3(0f, height * 0.5f + 0.1f, 0f),
                 new Vector2(width + 0.3f, 0.15f), 0.5f, TextAlignmentOptions.Center);
-            title.color = lineColor;
+            FacilityUi.Style(title, .65f, true);
             Redraw();
         }
 
@@ -118,9 +129,12 @@ namespace SortQuest
                 line.SetPosition(i, origin + new Vector3(width * (i + 1) / slots, height * latest, 0f));
             }
 
+            latestDot.gameObject.SetActive(results.Count > 0);
+            empty.gameObject.SetActive(results.Count == 0);
+            if (results.Count > 0) latestDot.localPosition = line.GetPosition(results.Count - 1) + Vector3.back * .002f;
             title.text = results.Count == 0
-                ? "Robot accuracy\n<size=60%>no attempts yet</size>"
-                : $"Robot accuracy: {latest * 100f:F0}%\n<size=60%>last {Mathf.Min(window, results.Count)} grasps, {results.Count} tries so far</size>";
+                ? "GRASP SUCCESS\n<size=60%>Recent attempts</size>"
+                : $"GRASP SUCCESS   {latest * 100f:F0}%\n<size=60%>Last {Mathf.Min(window, results.Count)} • {results.Count} attempts total</size>";
         }
 
         /// <summary>Success rate over the attempts ending at index i.</summary>
