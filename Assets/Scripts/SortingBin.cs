@@ -29,6 +29,98 @@ namespace SortQuest
 
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private LineRenderer tutorialOutline;
+        private LineRenderer tutorialOutlineCore;
+        private Color tutorialHighlightColor;
+        private static Material tutorialLineMaterial;
+
+        /// <summary>Draws a bright, non-colliding outline around this bin during the guided tutorial.</summary>
+        public void SetTutorialHighlighted(bool highlighted)
+        {
+            if (highlighted && tutorialOutline == null)
+            {
+                Collider binCollider = GetComponent<Collider>();
+                if (binCollider == null) return;
+
+                var outlineObject = new GameObject("Tutorial bin highlight");
+                outlineObject.transform.SetParent(transform, true);
+                tutorialOutline = CreateTutorialLine(outlineObject, 13);
+                var coreObject = new GameObject("White highlight core");
+                coreObject.transform.SetParent(outlineObject.transform, false);
+                tutorialOutlineCore = CreateTutorialLine(coreObject, 13);
+                tutorialOutlineCore.widthMultiplier = 0.028f;
+                tutorialHighlightColor = Color.Lerp(TrashTypes.BinColor(binType), Color.white, 0.22f);
+
+                Bounds bounds = binCollider.bounds;
+                Vector3 c = bounds.center;
+                Vector3 e = bounds.extents * 1.06f;
+                Vector3[] points =
+                {
+                    new Vector3(c.x - e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z + e.z),
+                    new Vector3(c.x - e.x, c.y + e.y, c.z + e.z),
+                    new Vector3(c.x - e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x - e.x, c.y - e.y, c.z - e.z),
+                    new Vector3(c.x - e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y - e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z - e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z + e.z),
+                    new Vector3(c.x + e.x, c.y - e.y, c.z + e.z),
+                    new Vector3(c.x + e.x, c.y + e.y, c.z + e.z)
+                };
+                tutorialOutline.SetPositions(points);
+                tutorialOutlineCore.SetPositions(points);
+            }
+            if (tutorialOutline != null)
+            {
+                tutorialOutline.enabled = highlighted;
+                if (tutorialOutlineCore != null) tutorialOutlineCore.enabled = highlighted;
+            }
+        }
+
+        private static LineRenderer CreateTutorialLine(GameObject parent, int pointCount)
+        {
+            if (tutorialLineMaterial == null)
+            {
+                Shader shader = Resources.Load<Shader>("TutorialHighlight");
+                if (shader != null) tutorialLineMaterial = new Material(shader);
+            }
+
+            LineRenderer line = parent.AddComponent<LineRenderer>();
+            line.useWorldSpace = true;
+            line.positionCount = pointCount;
+            line.widthMultiplier = 0.085f;
+            line.sharedMaterial = tutorialLineMaterial;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            line.numCapVertices = 4;
+            line.numCornerVertices = 2;
+            line.startColor = Color.white;
+            line.endColor = Color.white;
+            return line;
+        }
+
+        private void Update()
+        {
+            if (tutorialOutline == null || !tutorialOutline.enabled) return;
+
+            // A broad, animated bin-color band is visible from a distance; its white center keeps
+            // the edges legible against both the bin and the environment.
+            float pulse = (Mathf.Sin(Time.unscaledTime * 5f) + 1f) * 0.5f;
+            tutorialOutline.widthMultiplier = Mathf.Lerp(0.075f, 0.105f, pulse);
+            Color color = Color.Lerp(tutorialHighlightColor, Color.white, pulse * 0.22f);
+            tutorialOutline.startColor = color;
+            tutorialOutline.endColor = color;
+            // The inner line can be absent after an editor domain reload or if its GameObject was
+            // removed independently. Keep the main highlight running without throwing every frame.
+            if (tutorialOutlineCore != null)
+            {
+                tutorialOutlineCore.startColor = Color.white;
+                tutorialOutlineCore.endColor = Color.white;
+            }
+        }
 
         private void Reset()
         {

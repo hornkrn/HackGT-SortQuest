@@ -63,6 +63,8 @@ namespace SortQuest
         public ItemType ItemType => itemType;
         public BinType CorrectBin => TrashTypes.CorrectBin(itemType);
         public TrashItemState State { get; private set; } = TrashItemState.OnBelt;
+        /// <summary>The tutorial owns cleanup so failed items remain until the black frame.</summary>
+        public bool TutorialOwned { get; set; }
         public Rigidbody Body => body;
         public Grabbable Grabbable => grabbable;
 
@@ -407,8 +409,11 @@ namespace SortQuest
             }
             State = TrashItemState.Sorted;
             Sorted?.Invoke(this, bin, correct);
-            Destroy(gameObject, despawnAfterSortSeconds);
+            if (!TutorialOwned) Destroy(gameObject, despawnAfterSortSeconds);
         }
+
+        /// <summary>Ends a failed tutorial attempt through the normal recording events.</summary>
+        public void MarkTutorialMiss() => Miss();
 
         private void Miss()
         {
@@ -418,7 +423,7 @@ namespace SortQuest
             }
             State = TrashItemState.Missed;
             Missed?.Invoke(this);
-            Destroy(gameObject);
+            if (!TutorialOwned) Destroy(gameObject);
         }
     }
 }

@@ -7,7 +7,7 @@ namespace SortQuest
 {
     /// <summary>
     /// The in-VR menu: a small table with one grabbable block per gripper and a START block.
-    /// Grabbing a gripper block selects that gripper (the robot changes right away); grabbing START begins the game.
+    /// Grabbing a gripper block selects that gripper (the robot changes right away); grabbing START begins the tutorial.
     /// After Results, two blocks offer KEEP IMPROVING (more lessons) or MENU. Shown only in the Menu and Results states.
     /// </summary>
     public class MainMenu : MonoBehaviour

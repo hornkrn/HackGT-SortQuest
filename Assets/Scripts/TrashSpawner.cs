@@ -31,6 +31,7 @@ namespace SortQuest
         public event Action<TrashItem> ItemSpawned;
 
         public bool Spawning { get; set; }
+        public ConveyorBelt Belt => belt;
 
         /// <summary>When set, only this item type spawns.</summary>
         public ItemType? OnlyType { get; set; }
@@ -77,16 +78,35 @@ namespace SortQuest
                 return null;
             }
 
+            return SpawnItem(prefab, belt.StartPosition);
+        }
+
+        /// <summary>Spawns one chosen item at a point along the belt for the guided tutorial.</summary>
+        public TrashItem SpawnTutorialItem(ItemType type, float progress)
+        {
+            if (belt == null)
+            {
+                Debug.LogError("[SortQuest] Tutorial item needs a configured conveyor belt.", this);
+                return null;
+            }
+            TrashItem prefab = GetPrefab(type);
+            return prefab != null ? SpawnItem(prefab, belt.PositionAtProgress(progress)) : null;
+        }
+
+        private TrashItem SpawnItem(TrashItem prefab, Vector3 point)
+        {
+            if (prefab == null || belt == null) return null;
+
             Quaternion rotation = prefab.transform.rotation;
             if (randomYaw)
             {
                 rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) * rotation;
             }
 
-            TrashItem item = Instantiate(prefab, belt.StartPosition, rotation, itemParent);
+            TrashItem item = Instantiate(prefab, point, rotation, itemParent);
 
-            // Lift the item so its bottom rests on the start point instead of its center.
-            float lift = belt.StartPosition.y - GetBottomY(item);
+            // Lift the item so its bottom rests on the belt instead of its center.
+            float lift = point.y - GetBottomY(item);
             Vector3 position = item.transform.position + Vector3.up * lift;
             item.transform.position = position;
             item.Body.position = position;

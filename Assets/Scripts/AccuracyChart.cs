@@ -110,7 +110,7 @@ namespace SortQuest
 
         private void HandleStateChanged(GameState state)
         {
-            if (state == GameState.Intro)
+            if (state == GameState.Intro || state == GameState.Tutorial)
             {
                 results.Clear();
                 Redraw();

@@ -28,6 +28,7 @@ namespace SortQuest
         private Vector2 textureOffset;
 
         public Vector3 StartPosition => startPoint.position;
+        public Vector3 PositionAtProgress(float progress) => Vector3.Lerp(startPoint.position, endPoint.position, Mathf.Clamp01(progress));
         public Vector3 Direction => (endPoint.position - startPoint.position).normalized;
         public Vector3 Velocity => running ? Direction * speed : Vector3.zero;
 

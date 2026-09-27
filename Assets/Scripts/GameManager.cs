@@ -14,16 +14,18 @@ namespace SortQuest
         Training,
         RobotRound,
         TeachMe,
-        Results
+        Results,
+        Tutorial
     }
 
     /// <summary>
-    /// Runs the game: Menu (pick a gripper, grab START), Intro, HumanRound (the player sorts and teaches),
+    /// Runs the game: Menu (pick a gripper, grab START), Tutorial (guided six-item onboarding),
+    /// HumanRound (the player sorts and teaches),
     /// Training (recap), RobotRound (the robot sorts alone), then lessons: TeachMe (the player demonstrates the
     /// robot's weakest item) followed by a short robot retry on that item, repeated until the robot has mastered
     /// every item or the lesson limit is reached. Then Results, where the player can keep improving or go back
     /// to the menu. Picking the weakest item each time is active learning: new data goes where the robot is worst.
-    /// Without a MainMenu in the scene, the game starts at Intro and loops back to it.
+    /// Without a MainMenu in the scene, the game starts at Tutorial and loops back to it.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -42,6 +44,7 @@ namespace SortQuest
         [SerializeField] private MainMenu menu;
         [SerializeField] private GripperCatalog catalog;
         [SerializeField] private GripperProgress progress;
+        private GuidedTutorial guidedTutorial;
 
         [Tooltip("Big text in front of the player that shows the current state and timer.")]
         [SerializeField] private TMP_Text statusText;
@@ -102,6 +105,7 @@ namespace SortQuest
         private int lessonLimit;
         private float activeMasteryRate;
         private bool progressRecorded;
+        private string tutorialStatus;
 
         // Items taught in this game, in order, each listed once (for Results).
         private readonly List<ItemType> lessons = new List<ItemType>();
@@ -135,6 +139,9 @@ namespace SortQuest
             if (menu == null) menu = FindAnyObjectByType<MainMenu>();
             if (catalog == null) catalog = FindAnyObjectByType<GripperCatalog>();
             if (progress == null) progress = FindAnyObjectByType<GripperProgress>();
+            guidedTutorial = GetComponent<GuidedTutorial>();
+            if (guidedTutorial == null) guidedTutorial = gameObject.AddComponent<GuidedTutorial>();
+            guidedTutorial.Initialize(this, spawner);
             activeMasteryRate = masteryRate;
             lessonLimit = maxLessons;
             if (spawner == null)
@@ -169,7 +176,7 @@ namespace SortQuest
 
         private void Start()
         {
-            SetState(HasMenu ? GameState.Menu : GameState.Intro);
+            SetState(HasMenu ? GameState.Menu : GameState.Tutorial);
         }
 
         private void Update()
@@ -179,6 +186,8 @@ namespace SortQuest
             {
                 case GameState.Menu:
                     break; // Waits for START.
+                case GameState.Tutorial:
+                    break; // GuidedTutorial advances after each item is sorted.
                 case GameState.Intro:
                     if (timeUp) SetState(GameState.HumanRound);
                     break;
@@ -202,7 +211,7 @@ namespace SortQuest
                     if (timeUp)
                     {
                         if (HasMenu) SetState(GameState.Menu);
-                        else if (loopForNextPlayer) SetState(GameState.Intro);
+                        else if (loopForNextPlayer) SetState(GameState.Tutorial);
                     }
                     break;
             }
@@ -219,7 +228,7 @@ namespace SortQuest
         {
             if (State == GameState.Menu)
             {
-                SetState(GameState.Intro);
+                SetState(GameState.Tutorial);
             }
         }
 
@@ -270,6 +279,7 @@ namespace SortQuest
 
         public void SetState(GameState state)
         {
+            if (State == GameState.Tutorial && state != GameState.Tutorial) guidedTutorial.Cancel();
             State = state;
             stateStartTime = Time.time;
             Enter(state);
@@ -297,27 +307,10 @@ namespace SortQuest
                     break;
 
                 case GameState.Intro:
+                case GameState.Tutorial:
                     StopEverything();
-                    activeMasteryRate = masteryRate;
-                    lessonLimit = maxLessons;
-                    progressRecorded = false;
-                    TeachItem = null;
-                    IsRetry = false;
-                    Certified = false;
-                    finishRequested = false;
-                    lessons.Clear();
-                    lessonsGiven = 0;
-                    goodGraspsTaughtTotal = 0;
-                    firstRobotRound.Clear();
-                    retryRobotRound.Clear();
-                    goodGraspsByType.Clear();
-                    goodGraspsThisRound = 0;
-                    variationsTried = 0;
-                    variationsKept = 0;
-                    firstRoundItems = 0;
-                    firstRoundItemsSorted = 0;
-                    if (scoreBoard != null) scoreBoard.ResetScore();
-                    if (robot != null) robot.ResetStats();
+                    ResetRun();
+                    if (state == GameState.Tutorial) guidedTutorial.Begin();
                     break;
 
                 case GameState.HumanRound:
@@ -374,6 +367,41 @@ namespace SortQuest
             }
         }
 
+        private void ResetRun()
+        {
+            activeMasteryRate = masteryRate;
+            lessonLimit = maxLessons;
+            progressRecorded = false;
+            TeachItem = null;
+            IsRetry = false;
+            Certified = false;
+            finishRequested = false;
+            lessons.Clear();
+            lessonsGiven = 0;
+            goodGraspsTaughtTotal = 0;
+            firstRobotRound.Clear();
+            retryRobotRound.Clear();
+            goodGraspsByType.Clear();
+            goodGraspsThisRound = 0;
+            variationsTried = 0;
+            variationsKept = 0;
+            firstRoundItems = 0;
+            firstRoundItemsSorted = 0;
+            if (scoreBoard != null) scoreBoard.ResetScore();
+            if (robot != null) robot.ResetStats();
+        }
+
+        public void SetTutorialStatus(string message)
+        {
+            tutorialStatus = message;
+            if (State == GameState.Tutorial) RefreshStatus();
+        }
+
+        public void CompleteTutorial()
+        {
+            if (State == GameState.Tutorial) SetState(GameState.HumanRound);
+        }
+
         private void StartSpawning(ItemType? onlyType)
         {
             spawner.OnlyType = onlyType;
@@ -401,6 +429,7 @@ namespace SortQuest
             switch (State)
             {
                 case GameState.Intro: return introSeconds;
+                case GameState.Tutorial: return 0f;
                 case GameState.HumanRound: return humanRoundSeconds;
                 case GameState.Training: return trainingSeconds;
                 case GameState.RobotRound: return IsRetry ? retrySeconds : robotRoundSeconds;
@@ -637,6 +666,11 @@ namespace SortQuest
                     {
                         body.Append($"The robot is studying {augmenter.PendingGrasps} grasps for this gripper...");
                     }
+                    break;
+
+                case GameState.Tutorial:
+                    title = "SORTQUEST TUTORIAL";
+                    body.AppendLine(tutorialStatus ?? "Listen to the guide and sort each item into the highlighted bin.");
                     break;
 
                 case GameState.Intro:
