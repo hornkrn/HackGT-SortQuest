@@ -77,7 +77,7 @@ namespace SortQuest
         {
             if (scoreText != null)
             {
-                scoreText.text = $"Score: {Score}\nCorrect: {Correct}   Wrong: {Wrong}   Missed: {Missed}";
+                scoreText.text = $"<b>SCORE {Score}</b>   <size=60%>{Correct} correct  •  {Wrong} wrong  •  {Missed} missed</size>";
             }
             Changed?.Invoke(this);
         }

@@ -627,8 +627,8 @@ namespace SortQuest
             {
                 case GameState.Menu:
                     title = "CHOOSE A GRIPPER";
-                    body.AppendLine("Grab a gripper block on the table to select it, then grab START.");
-                    body.AppendLine($"Selected: {Gripper.displayName} ({Gripper.description})");
+                    body.AppendLine("Choose a tool at the console below.");
+                    body.AppendLine($"Ready: {Gripper.displayName}");
                     if (progress != null)
                     {
                         body.AppendLine($"This gripper: {progress.Badge(Gripper.id)}");
@@ -658,10 +658,7 @@ namespace SortQuest
                     {
                         body.AppendLine($"It practiced {variationsTried} variations of them; {variationsKept} worked.");
                     }
-                    foreach (KeyValuePair<ItemType, int> pair in goodGraspsByType)
-                    {
-                        body.AppendLine($"{TrashTypes.DisplayName(pair.Key)}: {pair.Value}");
-                    }
+                    body.AppendLine("Learning details appear on the left display.");
                     break;
 
                 case GameState.RobotRound:
@@ -696,8 +693,8 @@ namespace SortQuest
                     if (HasMenu)
                     {
                         body.AppendLine(Certified
-                            ? "Grab KEEP IMPROVING to raise the bar, or MENU to try another gripper."
-                            : "Grab KEEP IMPROVING for more lessons, or MENU to finish.");
+                            ? "KEEP IMPROVING to raise the bar • MENU to change tools"
+                            : "KEEP IMPROVING for more lessons • MENU to finish");
                     }
                     break;
             }
@@ -706,36 +703,11 @@ namespace SortQuest
 
         private void AppendResults(StringBuilder body)
         {
-            body.AppendLine($"Gripper: {Gripper.displayName}");
-            if (scoreBoard != null)
-            {
-                body.AppendLine($"Your score: {scoreBoard.Score} ({scoreBoard.Correct} correct, " +
-                                $"{scoreBoard.Wrong} wrong, {scoreBoard.Missed} missed)");
-            }
-            body.AppendLine($"Good grasps you taught: {goodGraspsThisRound + goodGraspsTaughtTotal}");
-            if (variationsTried > 0)
-            {
-                body.AppendLine($"Variations the robot practiced: {variationsKept} of {variationsTried} worked");
-            }
-
-            int attempts = 0;
-            int successes = 0;
-            foreach (Tally tally in firstRobotRound.Values)
-            {
-                attempts += tally.Attempts;
-                successes += tally.Successes;
-            }
-            body.AppendLine($"Robot's turn: {successes} of {attempts} grasps worked, " +
-                            $"sorted {firstRoundItemsSorted} of {firstRoundItems} items");
-
-            body.AppendLine($"Robot mastered {CountMastered()} of {ItemCount} items after {lessonsGiven} lessons");
-            foreach (ItemType taught in lessons)
-            {
-                firstRobotRound.TryGetValue(taught, out Tally before);
-                retryRobotRound.TryGetValue(taught, out Tally after);
-                body.AppendLine($"{TrashTypes.DisplayName(taught)}: {FormatTally(before)} before your lesson, " +
-                                $"{FormatTally(after)} after{(IsMastered(taught) ? " (mastered)" : "")}");
-            }
+            body.AppendLine($"{goodGraspsThisRound + goodGraspsTaughtTotal} grasps taught   •   {variationsKept} successful practice variations");
+            int attempts = 0, successes = 0;
+            foreach (Tally tally in firstRobotRound.Values) { attempts += tally.Attempts; successes += tally.Successes; }
+            body.AppendLine($"Robot: {successes}/{attempts} grasps   •   {firstRoundItemsSorted}/{firstRoundItems} items sorted");
+            body.AppendLine($"{CountMastered()}/{ItemCount} materials mastered   •   {lessonsGiven} lessons");
         }
 
         private static int ItemCount => Enum.GetValues(typeof(ItemType)).Length;

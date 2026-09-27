@@ -29,6 +29,62 @@ namespace SortQuest.Editor
         private static Geometry g;
         private static Material palette;
 
+        public static void AddPeripheralDetails()
+        {
+            const string detailName = "Facility peripheral details";
+            var scene = SceneManager.GetActiveScene();
+            var old = scene.GetRootGameObjects().FirstOrDefault(o => o.name == detailName);
+            if (old != null) UnityEngine.Object.DestroyImmediate(old);
+            g = new Geometry();
+            // Exposed services and equipment trim, outside the sorting/reaching area.
+            foreach (int side in new[] { -1, 1 })
+            {
+                float x = side * 4.15f;
+                Box(new Vector3(x, 2.85f, 1.3f), new Vector3(.25f, .25f, 4.4f), Alloy, .025f);
+                for (int i = 0; i < 9; i++)
+                {
+                    Box(new Vector3(x, 2.85f, -.7f + i * .5f), new Vector3(.29f, .29f, .035f), Slate, .005f);
+                    Box(new Vector3(side * 3.96f, .018f, -.6f + i * .32f), new Vector3(.35f, .025f, .025f), Slate, 0);
+                }
+                // Cable riser, electrical enclosure, warning stripe and latch.
+                Box(new Vector3(side * 3.92f, 1.55f, 3.65f), new Vector3(.07f, 2.4f, .08f), Slate, .008f);
+                Box(new Vector3(side * 3.85f, 1.9f, 3.5f), new Vector3(.47f, .62f, .18f), Ivory, .045f);
+                Box(new Vector3(side * 3.85f, 2.11f, 3.395f), new Vector3(.36f, .045f, .018f), Amber, .003f);
+                Box(new Vector3(side * 3.7f, 1.85f, 3.392f), new Vector3(.025f, .11f, .02f), Navy, .003f);
+                for (int j = 0; j < 5; j++) Box(new Vector3(side * 3.85f, 1.75f + .03f * j, 3.395f), new Vector3(.2f, .01f, .01f), Slate, 0);
+                // Stanchions behind the training displays, not across the player workspace.
+                Box(new Vector3(side * 2.05f, 1.0f, 2.8f), new Vector3(.075f, 2f, .075f), Slate, .012f);
+                Box(new Vector3(side * 2.05f, .04f, 2.8f), new Vector3(.5f, .07f, .32f), Navy, .018f);
+            }
+            // Wall-mounted fire equipment with handle, hose, retaining band and inspection plate.
+            Cylinder(new Vector3(3.85f, .92f, 3.48f), .105f, .5f, Hex("B74D40"), 12);
+            Box(new Vector3(3.85f, 1.21f, 3.48f), new Vector3(.19f, .04f, .05f), Navy, .01f);
+            Box(new Vector3(3.97f, .98f, 3.47f), new Vector3(.025f, .4f, .035f), Navy, .008f);
+            Box(new Vector3(3.85f, .93f, 3.365f), new Vector3(.11f, .17f, .012f), White, .005f);
+            // Notice board and clipped work sheets on the far left wall.
+            Box(new Vector3(-3.35f, 2.08f, 3.78f), new Vector3(.75f, .56f, .045f), Navy, .018f);
+            for (int i = 0; i < 3; i++)
+            {
+                var p = new Vector3(-3.57f + i * .22f, 2.09f, 3.746f);
+                Box(p, new Vector3(.18f, .34f, .008f), White, .002f);
+                Box(p + new Vector3(0, .14f, -.008f), new Vector3(.07f, .018f, .009f), Teal, .002f);
+                for (int j = 0; j < 5; j++) Box(p + new Vector3(0, .07f - j * .037f, -.006f), new Vector3(.12f, .006f, .005f), Slate, 0);
+            }
+            Mesh mesh = g.ToMesh("PeripheralDetails");
+            string path = Folder + "/PeripheralDetails.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (existing == null) AssetDatabase.CreateAsset(mesh, path);
+            else { EditorUtility.CopySerialized(mesh, existing); UnityEngine.Object.DestroyImmediate(mesh); mesh = existing; }
+            var details = new GameObject(detailName, typeof(MeshFilter), typeof(MeshRenderer));
+            details.layer = 2;
+            details.GetComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = details.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(Folder + "/Palette.mat");
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            Debug.Log("PERIPHERAL_DETAILS: " + mesh.triangles.Length / 3 + " triangles; one renderer; no colliders or lights.");
+        }
+
         public static void Apply()
         {
             if (EditorApplication.isPlaying) throw new InvalidOperationException("Exit Play mode first.");
