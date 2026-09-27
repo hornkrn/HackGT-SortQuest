@@ -23,6 +23,10 @@ namespace SortQuest
         public static int Mask = Physics.DefaultRaycastLayers;
         public static string LastObstacle { get; private set; }
 
+        // The player's body (the locomotion rig's capsule, tagged Player) isn't scenery a robot cell would contain,
+        // and players stand right at the bins. RobotArmDisplay.LinksClear ignores it the same way.
+        private static bool IsPlayer(Collider hit) => hit.CompareTag("Player");
+
         /// <param name="carried">An item the gripper is holding. It moves with the gripper, so no part can hit it;
         /// its own clearance from the scene is checked separately with PayloadOverlaps.</param>
         public static bool BodyOverlaps(IGripperModel model, GripperGrasp pose, float opening,
@@ -40,6 +44,7 @@ namespace SortQuest
                     var hit = Hits[i];
                     if (ignore != null && hit.attachedRigidbody == ignore) continue;
                     if (carried != null && hit.attachedRigidbody == carried) continue;
+                    if (IsPlayer(hit)) continue;
                     if (part.Contact && contactTarget != null && hit.attachedRigidbody == contactTarget) continue;
                     LastObstacle = part.Name + " would hit " + hit.name;
                     return true;
@@ -120,7 +125,8 @@ namespace SortQuest
                     pose.Rotation * part.Rotation, Mask, QueryTriggerInteraction.Ignore);
                 if (count == Hits.Length) { LastObstacle = "query capacity exceeded"; return true; }
                 for (int i = 0; i < count; i++)
-                    if (Hits[i].attachedRigidbody != item && (robot == null || Hits[i].attachedRigidbody != robot))
+                    if (Hits[i].attachedRigidbody != item && (robot == null || Hits[i].attachedRigidbody != robot) &&
+                        !IsPlayer(Hits[i]))
                     { LastObstacle = "carried item would hit " + Hits[i].name; return true; }
             }
             return false;
