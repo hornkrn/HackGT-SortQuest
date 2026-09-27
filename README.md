@@ -216,6 +216,7 @@ flowchart LR
 | `GET /grasps?item_type=battery_aa&good=true&source=human,augmented&gripper=suction_40mm&limit=500` | query parameters, all optional; also `checker_version` and `feasible` | `{"records": [GraspRecord, ...]}` | Optional: let a headset learn from every player's good grasps, not just its own |
 | `POST /grasp-annotations` | `{"annotations": [FeasibilityNote, ...]}`, up to 100 per batch | `{"inserted": 3, "duplicates": 0}` | Store which grippers could perform each human grasp, without changing the grasp |
 | `GET /grasp-annotations?record_id=...` | a record id | `{"annotations": [FeasibilityNote, ...]}` | Look up the notes for one record |
+| `POST /speech` | `{"text": "..."}`, up to 400 characters | MP3 audio | Speaks the Results screen in the tutorial narrator's ElevenLabs voice. The ElevenLabs key stays in the server's `.env` (`ELEVENLABS_API_KEY`); without it, Results stays silent |
 | `GET /stats` | nothing | counts per item type, source, and gripper; good grasp counts; robot success rate over time and per gripper; robot failures by reason, stage, checker version, and gripper | A live stats page for judges, and data for charts |
 | `PUT /images/{image_id}/{kind}` | the raw file bytes, where `kind` is `rgb`, `depth`, or `mask` | `{"stored": true}` | Optional: store the camera images, for example in GridFS or object storage, linked by `image.id` |
 

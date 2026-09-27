@@ -9,6 +9,7 @@ namespace SortQuest
     /// The in-VR menu: a small table with one grabbable block per gripper and a START block.
     /// Grabbing a gripper block selects that gripper (the robot changes right away); grabbing START asks whether to play the tutorial.
     /// After Results, two blocks offer KEEP IMPROVING (more lessons) or MENU. The tutorial prompt is shown between START and gameplay.
+    /// During a game, a MENU block to the player's right ends the game and returns here.
     /// </summary>
     public class MainMenu : MonoBehaviour
     {
@@ -17,6 +18,7 @@ namespace SortQuest
         public const string StartId = "start";
         public const string KeepImprovingId = "keep_improving";
         public const string BackToMenuId = "back_to_menu";
+        public const string QuitToMenuId = "quit_to_menu";
 
         [Tooltip("Prefab with ChoiceBlock and grab interaction (made by the scene builder).")]
         [SerializeField] private ChoiceBlock blockPrefab;
@@ -39,6 +41,13 @@ namespace SortQuest
         [Tooltip("Keep adjusting for this long after the menu appears (the headset's height can take a moment to settle).")]
         [SerializeField] private float settleSeconds = 3f;
 
+        [Header("In-game MENU button")]
+        [Tooltip("Where the in-game MENU block sits, relative to this menu: to the player's right, a little behind the bins.")]
+        [SerializeField] private Vector3 quitButtonOffset = new Vector3(0.75f, 0f, -0.58f);
+
+        [Tooltip("Turns the in-game MENU block to face the player (degrees around the vertical).")]
+        [SerializeField] private float quitButtonYaw = 112f;
+
         [Header("Look")]
         [SerializeField] private Material tableMaterial;
         [Tooltip("Spacing between gripper blocks, in meters.")]
@@ -50,6 +59,7 @@ namespace SortQuest
         private Transform menuRoot;
         private Transform resultsRoot;
         private Transform tutorialRoot;
+        private Transform inGameRoot;
         private bool actionPending;
         private readonly Dictionary<string, ChoiceBlock> gripperBlocks = new Dictionary<string, ChoiceBlock>();
         private readonly Dictionary<string, TextMeshPro> gripperLabels = new Dictionary<string, TextMeshPro>();
@@ -100,6 +110,10 @@ namespace SortQuest
             resultsRoot.SetParent(transform, false);
             tutorialRoot = new GameObject("TutorialChoices").transform;
             tutorialRoot.SetParent(transform, false);
+            inGameRoot = new GameObject("InGameChoices").transform;
+            inGameRoot.SetParent(transform, false);
+            inGameRoot.localPosition = quitButtonOffset;
+            inGameRoot.localRotation = Quaternion.Euler(0f, quitButtonYaw, 0f);
 
             uiMaterial = VizUtil.FallbackMaterial();
             spacing = Mathf.Max(spacing, .21f);
@@ -134,6 +148,10 @@ namespace SortQuest
             AddLabel(resultsRoot, new Vector3(-0.12f, 0f, 0f), "KEEP\nIMPROVING");
             AddBlock(resultsRoot, BackToMenuId, new Vector3(0.12f, 0f, 0f), backToMenuColor);
             AddLabel(resultsRoot, new Vector3(0.12f, 0f, 0f), "MENU");
+
+            BuildTable(inGameRoot, 0.22f);
+            AddBlock(inGameRoot, QuitToMenuId, Vector3.zero, backToMenuColor);
+            AddLabel(inGameRoot, Vector3.zero, "MENU\n<size=60%>End this game</size>");
 
             var heading = VizUtil.CreateText("Menu heading", menuRoot, new Vector3(0, .43f, .07f),
                 new Vector2(width, .08f), .55f, TextAlignmentOptions.Center);
@@ -191,6 +209,7 @@ namespace SortQuest
                 case StartId:
                 case KeepImprovingId:
                 case BackToMenuId:
+                case QuitToMenuId:
                     // These hide the block the player is holding. Wait a frame so the Interaction SDK finishes
                     // registering the grab first; hiding it mid-grab makes the SDK's throw handler throw.
                     actionPending = true;
@@ -221,6 +240,7 @@ namespace SortQuest
                     game.KeepImproving();
                     break;
                 case BackToMenuId:
+                case QuitToMenuId:
                     game.BackToMenu();
                     break;
             }
@@ -245,6 +265,8 @@ namespace SortQuest
             menuRoot.gameObject.SetActive(state == GameState.Menu);
             resultsRoot.gameObject.SetActive(state == GameState.Results);
             tutorialRoot.gameObject.SetActive(state == GameState.TutorialChoice);
+            // Results has its own MENU block; the menu itself needs none.
+            inGameRoot.gameObject.SetActive(state != GameState.Menu && state != GameState.Results);
             if (state == GameState.Menu)
             {
                 RefreshLabels();

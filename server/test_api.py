@@ -1,6 +1,8 @@
 """Offline API contract checks: python -m unittest discover -s server."""
+import json
 import os
 import unittest
+import urllib.error
 import re
 from pathlib import Path
 from typing import get_args
@@ -201,6 +203,39 @@ class ApiTests(unittest.TestCase):
         facet = app.state.db.grasps.aggregate.call_args.args[0][0]['$facet']
         reason = facet['failure_reasons'][1]['$group']['_id']['reason']
         self.assertEqual(reason['$ifNull'][1]['$cond'][1:], ['none', 'unknown'])
+
+    def test_speech_returns_elevenlabs_audio(self):
+        upstream = MagicMock()
+        upstream.__enter__.return_value.read.return_value = b'ID3fake-mp3'
+        with patch.dict(os.environ, {'ELEVENLABS_API_KEY': 'test-eleven-key'}), \
+                patch('server.main.urllib.request.urlopen', return_value=upstream) as urlopen:
+            response = self.client.post('/speech', json={'text': 'Here are your results.'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-type'], 'audio/mpeg')
+        self.assertEqual(response.content, b'ID3fake-mp3')
+        sent = urlopen.call_args.args[0]
+        self.assertIn('/v1/text-to-speech/CwhRBWXzGAHq8TQ4Fs17', sent.full_url)
+        self.assertEqual(sent.get_header('Xi-api-key'), 'test-eleven-key')
+        self.assertEqual(json.loads(sent.data)['text'], 'Here are your results.')
+
+    def test_speech_without_key_or_with_upstream_failure(self):
+        with patch.dict(os.environ, {'ELEVENLABS_API_KEY': ''}), patch('server.main.urllib.request.urlopen') as urlopen:
+            self.assertEqual(self.client.post('/speech', json={'text': 'Hi'}).status_code, 503)
+            urlopen.assert_not_called()
+        failure = urllib.error.URLError('secret-upstream-details')
+        with patch.dict(os.environ, {'ELEVENLABS_API_KEY': 'test-eleven-key'}), \
+                patch('server.main.urllib.request.urlopen', side_effect=failure):
+            response = self.client.post('/speech', json={'text': 'Hi'})
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn('secret-upstream-details', response.text)
+        self.assertNotIn('test-eleven-key', response.text)
+
+    def test_speech_validates_text(self):
+        with patch.dict(os.environ, {'ELEVENLABS_API_KEY': 'test-eleven-key'}), \
+                patch('server.main.urllib.request.urlopen') as urlopen:
+            for body in ({'text': ''}, {'text': 'x' * 401}, {'text': 'Hi', 'voice': 'other'}, {}):
+                self.assertEqual(self.client.post('/speech', json=body).status_code, 422)
+            urlopen.assert_not_called()
 
     def test_write_concern_failure_is_retryable(self):
         app.state.db.grasps.insert_many.side_effect = BulkWriteError({'nInserted': 1, 'writeErrors': [], 'writeConcernErrors': [{'code': 64}]})

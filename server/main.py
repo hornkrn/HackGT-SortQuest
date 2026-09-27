@@ -1,6 +1,11 @@
 """SortQuest database API. Run from the repository root with uvicorn server.main:app."""
+import json
 import os
 import secrets
+import ssl
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, PyMongoError
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 
@@ -160,6 +165,37 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None)):
 async def database_error(request, exc):
     # Driver errors may contain server details; never expose them to clients.
     return JSONResponse(status_code=503, content={'detail': 'Database operation unavailable'})
+
+
+# ElevenLabs text to speech. The key stays in the server's .env; the game only ever receives audio.
+ELEVENLABS_URL = 'https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128'
+DEFAULT_VOICE = 'CwhRBWXzGAHq8TQ4Fs17'  # "Roger", the voice of the tutorial narration
+DEFAULT_TTS_MODEL = 'eleven_flash_v2_5'
+
+
+class SpeechRequest(Model):
+    text: str = Field(min_length=1, max_length=400)
+
+
+@app.post('/speech', dependencies=[Depends(require_api_key)])
+def speech(request: SpeechRequest):
+    key = os.environ.get('ELEVENLABS_API_KEY', '')
+    if not key:
+        raise HTTPException(503, 'Speech is not configured')
+    voice = urllib.parse.quote(os.environ.get('ELEVENLABS_VOICE_ID') or DEFAULT_VOICE, safe='')
+    body = json.dumps({'text': request.text, 'model_id': os.environ.get('ELEVENLABS_MODEL_ID') or DEFAULT_TTS_MODEL})
+    call = urllib.request.Request(ELEVENLABS_URL.format(voice=voice), data=body.encode(), method='POST',
+                                  headers={'xi-api-key': key, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg'})
+    try:
+        tls = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(call, timeout=20, context=tls) as response:
+            audio = response.read()
+    except (urllib.error.URLError, TimeoutError, OSError):
+        # Never pass ElevenLabs' error text through: it can echo request details.
+        raise HTTPException(502, 'Speech service unavailable') from None
+    if not audio:
+        raise HTTPException(502, 'Speech service returned no audio')
+    return Response(content=audio, media_type='audio/mpeg')
 
 
 @app.get('/health')

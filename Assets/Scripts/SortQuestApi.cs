@@ -79,14 +79,51 @@ namespace SortQuest
         public IEnumerator ReadStats(Action<Stats> success, Action<string> failure)
             => Request("GET", "/stats", null, success, failure);
 
+        [Serializable] private class SpeechBody { public string text; }
+
+        /// <summary>
+        /// Spoken audio for a short text (up to 400 characters). The server asks ElevenLabs for it, so the
+        /// ElevenLabs key never ships in the app. Allow a few seconds; callers must not wait on it.
+        /// </summary>
+        public IEnumerator Speak(string text, Action<AudioClip> success, Action<string> failure)
+        {
+            if (!ValidBaseUrl(failure)) yield break;
+            string url = baseUrl.TrimEnd('/') + "/speech";
+            using (var request = new UnityWebRequest(url, "POST"))
+            {
+                request.timeout = Mathf.Max(timeoutSeconds, 20);
+                request.redirectLimit = 0;
+                var audio = new DownloadHandlerAudioClip(url, AudioType.MPEG);
+                request.downloadHandler = audio;
+                request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(GraspJson.Write(new SpeechBody { text = text })));
+                request.SetRequestHeader("Content-Type", "application/json");
+                if (!string.IsNullOrEmpty(apiKey)) request.SetRequestHeader("X-API-Key", apiKey);
+                yield return request.SendWebRequest();
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    failure?.Invoke("Speech request failed (HTTP " + request.responseCode + ", " + request.result + ").");
+                    yield break;
+                }
+                AudioClip clip = audio.audioClip;
+                if (clip == null) failure?.Invoke("Speech audio could not be decoded.");
+                else success?.Invoke(clip);
+            }
+        }
+
+        private bool ValidBaseUrl(Action<string> failure)
+        {
+            if (Uri.TryCreate(baseUrl, UriKind.Absolute, out Uri uri) &&
+                (uri.Scheme == "http" || uri.Scheme == "https") && string.IsNullOrEmpty(uri.UserInfo))
+            {
+                return true;
+            }
+            failure?.Invoke("Set a valid HTTP(S) API URL without credentials.");
+            return false;
+        }
+
         private IEnumerator Request<T>(string method, string path, string body, Action<T> success, Action<string> failure)
         {
-            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out Uri uri) ||
-                (uri.Scheme != "http" && uri.Scheme != "https") || !string.IsNullOrEmpty(uri.UserInfo))
-            {
-                failure?.Invoke("Set a valid HTTP(S) API URL without credentials.");
-                yield break;
-            }
+            if (!ValidBaseUrl(failure)) yield break;
             using (var request = new UnityWebRequest(baseUrl.TrimEnd('/') + path, method))
             {
                 request.timeout = Mathf.Max(1, timeoutSeconds);

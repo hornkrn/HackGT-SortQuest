@@ -272,10 +272,20 @@ namespace SortQuest
         [ContextMenu("Back to menu")]
         public void BackToMenu()
         {
-            if (HasMenu)
+            if (!HasMenu)
             {
-                SetState(GameState.Menu);
+                return;
             }
+            if (State != GameState.Menu && State != GameState.Results)
+            {
+                // Leaving mid-game keeps the data clean (StopEverything): the robot's attempt in progress is saved as
+                // "aborted" (never scored or learned from); items already released but not yet landed are removed and
+                // their grabs discarded rather than labeled failures; an item still in a player's hand keeps recording
+                // until it lands. Practice runs on hidden copies and saves whole jobs only, so it is unaffected.
+                // Unfinished games aren't counted in gripper progress, which is recorded at Results.
+                Debug.Log($"[SortQuest] Game ended early from {State}; back to the menu.");
+            }
+            SetState(GameState.Menu);
         }
 
         [ContextMenu("Finish teaching (go to Results after this step)")]
@@ -763,6 +773,29 @@ namespace SortQuest
             body.AppendLine($"Robot: {successes}/{attempts} grasps   •   {firstRoundItemsSorted}/{firstRoundItems} items sorted");
             body.AppendLine($"{CountMastered()}/{ItemCount} materials mastered   •   {lessonsGiven} lessons");
         }
+
+        /// <summary>A short spoken version of the Results screen, for the results voice.</summary>
+        public string SpokenResults()
+        {
+            int attempts = 0, successes = 0;
+            foreach (Tally tally in firstRobotRound.Values) { attempts += tally.Attempts; successes += tally.Successes; }
+            var text = new StringBuilder(Certified ? "Robot certified! " : "Here are your results. ");
+            text.Append($"You taught the robot {Plural(goodGraspsThisRound + goodGraspsTaughtTotal, "grasp")}. ");
+            if (attempts > 0 || firstRoundItems > 0)
+            {
+                text.Append($"On its own turn, it sorted {firstRoundItemsSorted} of {Plural(firstRoundItems, "item")}, " +
+                            $"and {successes} of its {Plural(attempts, "grab")} worked. ");
+            }
+            text.Append($"It has mastered {CountMastered()} of {ItemCount} materials after {Plural(lessonsGiven, "lesson")}.");
+            if (HasMenu)
+            {
+                text.Append(Certified ? " Keep improving to raise the bar, or head back to the menu."
+                                      : " Keep teaching to help it improve, or head back to the menu.");
+            }
+            return text.ToString();
+        }
+
+        private static string Plural(int count, string word) => count + " " + word + (count == 1 ? "" : "s");
 
         private static int ItemCount => Enum.GetValues(typeof(ItemType)).Length;
 
