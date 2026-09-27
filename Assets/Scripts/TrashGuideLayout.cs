@@ -41,6 +41,9 @@ namespace SortQuest
 
         public static float ColumnX(int column) => (column - (Columns.Length - 1) * 0.5f) * ColumnWidth;
 
+        // Keep the existing board shelves and text sizes; the larger catalog rotates through these slots.
+        public static int DisplaySlots(BinType bin) => bin == BinType.Metal || bin == BinType.Plastic ? 1 : 2;
+
         /// <summary>The items that belong in a bin, in ItemType order.</summary>
         public static List<ItemType> ItemsFor(BinType bin)
         {

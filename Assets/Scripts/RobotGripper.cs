@@ -291,7 +291,6 @@ namespace SortQuest
             pendingRecord.parent_record_id = choice.ParentRecordId;
             pendingRecord.outcome.stage = "plan";
             if (robotCamera != null) pendingRecord.image = robotCamera.Capture(item);
-            GraspPlanned?.Invoke(item, choice);
             motionFailure = null;
             OpenFingers();
 
@@ -308,6 +307,8 @@ namespace SortQuest
             // Arm-specific, so it's labeled separately and never changes the grasp's own feasibility label.
             if (arm != null && (!arm.LinksClear(planned) || !arm.LinksClear(lineUp)))
             { FinishAttempt(false, "arm_collision", "plan"); yield break; }
+
+            GraspPlanned?.Invoke(item, choice);
 
             yield return MoveViaSafeHeight(lineUp.Position, lineUp.Rotation);
             if (motionFailure != null) { FinishAttempt(false, motionFailure, "approach"); yield break; }
@@ -356,7 +357,8 @@ namespace SortQuest
                     leftOffset = left; rightOffset = right;
                     yield return waitForFixedUpdate;
                 }
-                success = leftTouch && rightTouch;
+                success = leftTouch && rightTouch && leftOffset + rightOffset > 2f * profile.parallel.touchSkin &&
+                    profile.parallel.TryGrasp(grasp, item.Body, out _);
                 heldWidth = leftOffset + rightOffset;
             }
             pendingRecord.outcome.grasp_success = success;

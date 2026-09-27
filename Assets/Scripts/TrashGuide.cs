@@ -9,7 +9,7 @@ namespace SortQuest
     /// The trash guide board to the player's left: every kind of trash, grouped under the bin it goes in, with
     /// display models and clear names, so the items on the belt don't need their own labels.
     /// The board itself is scene art (SortQuest > Polish Scene Visuals); this adds the models and text once at
-    /// start. Presentation only: no colliders, physics, or per-frame work. Created by InteractionFeedback.
+    /// start, then rotates through catalog pages. Presentation only: no colliders or physics. Created by InteractionFeedback.
     /// </summary>
     public sealed class TrashGuide : MonoBehaviour
     {
@@ -24,6 +24,9 @@ namespace SortQuest
 
         [Tooltip("Turns each model this many degrees for a three-quarter view.")]
         [SerializeField] private float modelTurn = 30f;
+        [SerializeField, Min(5f)] private float pageSeconds = 10f;
+        private int page;
+        private float nextPage;
 
         private static readonly Color Ink = new Color32(0x17, 0x26, 0x2C, 0xFF);
         private static readonly Color Teal = new Color32(0x61, 0xB8, 0xA0, 0xFF);
@@ -35,6 +38,17 @@ namespace SortQuest
         {
             if (spawner == null) spawner = FindAnyObjectByType<TrashSpawner>();
             transform.SetPositionAndRotation(TrashGuideLayout.BoardPosition, TrashGuideLayout.BoardRotation);
+            Build();
+            nextPage = Time.unscaledTime + Mathf.Max(5f, pageSeconds);
+        }
+
+        private void Update()
+        {
+            if (Time.unscaledTime < nextPage) return;
+            nextPage = Time.unscaledTime + Mathf.Max(5f, pageSeconds);
+            page++;
+            for (int i = transform.childCount - 1; i >= 0; i--) Destroy(transform.GetChild(i).gameObject);
+            ModelCount = 0;
             Build();
         }
 
@@ -48,7 +62,7 @@ namespace SortQuest
             Text("Title", new Vector3(0f, TrashGuideLayout.TitleY + 0.01f, onFace), new Vector2(width - 0.1f, 0.12f),
                 0.8f, Color.white, FontStyles.Bold, "TRASH GUIDE");
             Text("Subtitle", new Vector3(0f, TrashGuideLayout.TitleY - 0.065f, onFace), new Vector2(width - 0.1f, 0.05f),
-                0.34f, Teal, FontStyles.Normal, "Which bin does each item go in?");
+                0.34f, Teal, FontStyles.Normal, "Which bin? • More items every 10 seconds");
 
             for (int column = 0; column < TrashGuideLayout.Columns.Length; column++)
             {
@@ -60,13 +74,15 @@ namespace SortQuest
                     0.52f, Ink, FontStyles.Bold, bin.ToString().ToUpperInvariant());
 
                 List<ItemType> items = TrashGuideLayout.ItemsFor(bin);
-                for (int i = 0; i < items.Count; i++)
+                int slots = Mathf.Min(items.Count, TrashGuideLayout.DisplaySlots(bin));
+                for (int i = 0; i < slots; i++)
                 {
-                    Vector3 slot = TrashGuideLayout.Slot(column, i, items.Count);
-                    Text("Name " + items[i], new Vector3(slot.x, TrashGuideLayout.LabelY(slot), onFace),
+                    ItemType item = items[(page * slots + i) % items.Count];
+                    Vector3 slot = TrashGuideLayout.Slot(column, i, slots);
+                    Text("Name " + item, new Vector3(slot.x, TrashGuideLayout.LabelY(slot), onFace),
                         new Vector2(TrashGuideLayout.ColumnWidth - 0.04f, 0.06f),
-                        0.4f, Color.Lerp(accent, Color.white, 0.25f), FontStyles.Bold, TrashTypes.DisplayName(items[i]));
-                    ShowModels(items[i], slot);
+                        0.4f, Color.Lerp(accent, Color.white, 0.25f), FontStyles.Bold, TrashTypes.DisplayName(item));
+                    ShowModels(item, slot);
                 }
             }
         }

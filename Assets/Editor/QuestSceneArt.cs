@@ -554,10 +554,10 @@ namespace SortQuest.Editor
                 if (c > 0)
                     Part(new Vector3(x - TrashGuideLayout.ColumnWidth * .5f, (TrashGuideLayout.SlotBottom + TrashGuideLayout.HeaderY) * .5f, -.012f),
                         new Vector3(.008f, TrashGuideLayout.HeaderY - TrashGuideLayout.SlotBottom + .04f, .004f), Slate, 0);
-                var items = TrashGuideLayout.ItemsFor(bin);
-                for (int i = 0; i < items.Count; i++)
+                int slots = TrashGuideLayout.DisplaySlots(bin);
+                for (int i = 0; i < slots; i++)
                 {
-                    Vector3 slot = TrashGuideLayout.Slot(c, i, items.Count);
+                    Vector3 slot = TrashGuideLayout.Slot(c, i, slots);
                     Part(new Vector3(slot.x, TrashGuideLayout.ShelfY(slot) - .006f, -TrashGuideLayout.FaceDepth - TrashGuideLayout.ShelfDepth * .5f),
                         new Vector3(TrashGuideLayout.ColumnWidth - .05f, .012f, TrashGuideLayout.ShelfDepth), Alloy, .003f);
                     Part(new Vector3(slot.x, TrashGuideLayout.LabelY(slot) - .034f, -.012f), new Vector3(.2f, .006f, .004f), accent, 0, true);

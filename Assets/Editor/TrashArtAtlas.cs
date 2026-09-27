@@ -32,7 +32,7 @@ namespace SortQuest.Editor
                 ((index / 8) * TileSize + Gutter + uv.y * span) / Size);
         }
 
-        internal static Texture2D Build(string folder)
+        internal static Texture2D Build(string folder, bool expanded = false)
         {
             pixels = new Color[Size * Size];
             for (tile = 0; tile < 64; tile++)
@@ -47,8 +47,33 @@ namespace SortQuest.Editor
                 if (type == 4) body = C(new[]{"494B43","A26946","A9B3AB","4A7358","416582","994B3C","494A4C","C3AF51"}[v]);
                 if (type == 5) body = C(new[]{"3C4244","BFC0B7","49667C","969F9B","8C4942","646B6A","63745B","51565A"}[v]);
                 if (type == 6) { body = C(new[]{"AAB7B2","273033","625548","C4B38B","CCC8AD","537368","737A78","E2D4A3"}[v]); smooth = v == 0 ? .55f : .15f; }
+                bool newLabel = expanded && tile < 18;
+                if (newLabel)
+                {
+                    BinType bin = TrashTypes.CorrectBin((ItemType)(tile + 6));
+                    body = bin == BinType.Metal ? C("8F9D9C") : bin == BinType.Paper ? C("C4AC7E") :
+                        bin == BinType.Hazardous ? C("424A51") : C(Colors[tile % Colors.Length]);
+                    smooth = bin == BinType.Metal ? .55f : bin == BinType.Paper ? .08f : .3f;
+                }
                 Fill(body, smooth);
-                switch (type)
+                if (newLabel)
+                {
+                    Rect(18, 66, 220, 118, Paper);
+                    string[] words = TrashTypes.DisplayName((ItemType)(tile + 6)).ToUpperInvariant().Split(' ');
+                    for (int w = 0; w < words.Length; w++) Text(words[w], 28, 155 - w * 25, 2, Ink);
+                    Barcode(30, 78, 105, 20);
+                    Text("SORTQUEST", 28, 39, 2, Paper);
+                    if ((ItemType)(tile + 6) == ItemType.FoldedNewspaper)
+                    {
+                        Fill(Paper, .06f);
+                        Text("DAILY SORT", 16, 215, 3, Ink);
+                        Line(12, 205, 244, 205, 2, Ink, 1);
+                        for (int column = 0; column < 3; column++)
+                        for (int line = 0; line < 27; line++)
+                            Line(16 + column * 77, 192 - line * 6, 72 + column * 77 - line % 4 * 5, 192 - line * 6, 1, Ink, .65f);
+                    }
+                }
+                else switch (type)
                 {
                     case 0: Can(v); break;
                     case 1: Bottle(v); break;

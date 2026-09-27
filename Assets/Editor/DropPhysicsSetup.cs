@@ -16,7 +16,7 @@ namespace SortQuest.Editor
             if (EditorApplication.isPlaying) throw new InvalidOperationException("Exit Play mode first.");
             if (!AssetDatabase.IsValidFolder("Assets/Physics")) AssetDatabase.CreateFolder("Assets", "Physics");
             int count = 0;
-            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs" }))
+            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs", "Assets/Resources/TrashCatalog" }))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 var root = PrefabUtility.LoadPrefabContents(path);
@@ -29,7 +29,7 @@ namespace SortQuest.Editor
                     if (material == null) { material = new PhysicsMaterial(item.ItemType.ToString()); AssetDatabase.CreateAsset(material, materialPath); }
                     // Dry, used packaging: paper grips, metal slides, hollow plastic gives slightly.
                     bool paper = item.CorrectBin == BinType.Paper;
-                    bool plastic = item.ItemType == ItemType.PlasticBottle;
+                    bool plastic = item.CorrectBin == BinType.Plastic;
                     material.staticFriction = paper ? .65f : plastic ? .45f : .4f;
                     material.dynamicFriction = paper ? .5f : plastic ? .3f : .25f;
                     material.bounciness = paper ? .015f : plastic ? .12f : .045f;
@@ -64,7 +64,7 @@ namespace SortQuest.Editor
                 SceneManager.MoveGameObjectToScene(floor, scene);
                 floor.GetComponent<BoxCollider>().size = new Vector3(20, .02f, 20);
                 floor.transform.position = new Vector3(0, -.01f, 0);
-                foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs" }))
+                foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Prefabs", "Assets/Resources/TrashCatalog" }))
                 {
                     var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
                     if (prefab.GetComponent<TrashItem>() == null) continue;

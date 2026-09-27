@@ -1,0 +1,1 @@
+EXPANDED_TRASH_PASS: 66 prefabs; 24 types; max 32 convex parts; max 1472 triangles; sampled nearest-surface gap <= 6.49 mm; open cavities/handle, SDK bindings, drops, type filters and balanced spawning passed.
