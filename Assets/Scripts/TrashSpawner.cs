@@ -13,6 +13,9 @@ namespace SortQuest
         [SerializeField] private ConveyorBelt belt;
         [SerializeField] private TrashItem[] itemPrefabs;
 
+        [Tooltip("Include the expanded catalog from Resources/TrashCatalog without changing scene references.")]
+        [SerializeField] private bool includeExpandedCatalog = true;
+
         [Tooltip("Seconds between spawns.")]
         [SerializeField] private float spawnInterval = 3f;
 
@@ -41,6 +44,13 @@ namespace SortQuest
 
         private void Awake()
         {
+            if (includeExpandedCatalog)
+            {
+                var prefabs = new List<TrashItem>(itemPrefabs ?? Array.Empty<TrashItem>());
+                foreach (TrashItem prefab in Resources.LoadAll<TrashItem>("TrashCatalog"))
+                    if (!prefabs.Contains(prefab)) prefabs.Add(prefab);
+                itemPrefabs = prefabs.ToArray();
+            }
             Spawning = spawnOnStart;
             if (scoreBoard == null)
             {
@@ -147,14 +157,18 @@ namespace SortQuest
 
         private TrashItem PickPrefab()
         {
-            if (!OnlyType.HasValue)
-            {
-                return itemPrefabs[Random.Range(0, itemPrefabs.Length)];
-            }
+            if (itemPrefabs == null || itemPrefabs.Length == 0) return null;
+            // Choose types uniformly, then choose a visual variant. Eight old skins must not
+            // make an old type eight times more likely than one of the new shapes.
+            var types = new List<ItemType>();
+            foreach (TrashItem prefab in itemPrefabs)
+                if (prefab != null && !types.Contains(prefab.ItemType)) types.Add(prefab.ItemType);
+            if (types.Count == 0) return null;
+            ItemType type = OnlyType ?? types[Random.Range(0, types.Count)];
             var matches = new List<TrashItem>();
             foreach (TrashItem prefab in itemPrefabs)
             {
-                if (prefab != null && prefab.ItemType == OnlyType.Value)
+                if (prefab != null && prefab.ItemType == type)
                 {
                     matches.Add(prefab);
                 }

@@ -16,7 +16,13 @@ from starlette.responses import JSONResponse
 
 load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 
-ItemType = Literal['aluminum_can', 'plastic_bottle', 'cardboard_box', 'crumpled_paper', 'battery_aa', 'power_bank']
+ItemType = Literal[
+    'aluminum_can', 'plastic_bottle', 'cardboard_box', 'crumpled_paper', 'battery_aa', 'power_bank',
+    'food_tin', 'tuna_can', 'metal_lid', 'foil_tray', 'steel_bottle',
+    'yogurt_cup', 'detergent_bottle', 'shampoo_bottle', 'plastic_tub', 'plastic_cap',
+    'cereal_carton', 'egg_carton', 'paper_tube', 'folded_newspaper',
+    'battery_9v', 'battery_coin', 'smartphone', 'circuit_board',
+]
 Source = Literal['human', 'augmented', 'robot']
 Bin = Literal['metal', 'plastic', 'paper', 'hazardous']
 InputDevice = Literal['hands', 'controllers', 'simulator', 'unknown', 'none']

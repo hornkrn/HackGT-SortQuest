@@ -48,7 +48,9 @@ Pitch: "Every time you play, a recycling robot gets better at its job."
 
 ## Bins and items
 - Bins: metal (blue), plastic (yellow), paper (green), hazardous (red).
-- Starting items (primitives first): aluminum can, plastic bottle, cardboard box, crumpled paper, AA battery, power bank.
+- Original types (enum values 0-5, never reorder): aluminum can, plastic bottle, cardboard box, crumpled paper, AA battery, power bank.
+- Expanded catalog: 24 types / 66 prefabs, six types per bin. New types live in Resources/TrashCatalog and load automatically in TrashSpawner; choose types uniformly before skins. See docs/EXPANDED_TRASH.md for the full catalog, generation commands, and tests.
+- Colliders are mesh-fitted convex compounds, including hollow containers and open handles. Checker version 4 invalidates earlier practice labels; retain original human records and item frames. Green dots show checked surface contacts for the selected gripper. Parallel grasps require opposing inner-pad contacts, not two tips grazing one face.
 
 ## Build order
 1. `TrashItem`, `TrashSpawner`, `ConveyorBelt`, `SortingBin` (with a score).

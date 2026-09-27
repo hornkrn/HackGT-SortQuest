@@ -1,10 +1,13 @@
 """Offline API contract checks: python -m unittest discover -s server."""
 import os
 import unittest
+import re
+from pathlib import Path
+from typing import get_args
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from pymongo.errors import BulkWriteError, ServerSelectionTimeoutError
-from server.main import app, require_api_key
+from server.main import app, require_api_key, ItemType
 
 
 def record():
@@ -12,6 +15,17 @@ def record():
 
 
 class ApiTests(unittest.TestCase):
+    def test_catalog_matches_unity_and_all_types_upload(self):
+        unity = (Path(__file__).parents[1] / 'Assets/Scripts/TrashTypes.cs').read_text()
+        unity_ids = set(re.findall(r'case ItemType\.\w+: return "([a-z0-9_]+)";', unity))
+        self.assertEqual(set(get_args(ItemType)), unity_ids)
+        self.assertEqual(len(unity_ids), 24)
+        for item_id in unity_ids:
+            with self.subTest(item_id=item_id):
+                response = self.client.post('/grasps', json={'records': [dict(record(), item_type=item_id)]})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.client.get('/grasps', params={'item_type': item_id}).status_code, 200)
+
     def setUp(self):
         app.state.db = MagicMock()
         app.dependency_overrides[require_api_key] = lambda: None

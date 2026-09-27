@@ -28,8 +28,9 @@ namespace SortQuest
         [Tooltip("A finger closer than this to the item counts as touching it.")]
         public float touchSkin = 0.002f;
 
-        private const float CloseStep = 0.001f;
         private static readonly Collider[] OverlapBuffer = new Collider[16];
+        private static readonly RaycastHit[] ContactHits = new RaycastHit[32];
+        private static readonly float[] PadSamples = { 0f, -0.8f, 0.8f };
 
         public float OpenOffset => maxOpening * 0.5f;
 
@@ -72,9 +73,17 @@ namespace SortQuest
 
         public bool ContactOffsets(GripperGrasp grasp, Rigidbody item, out float left, out float right)
         {
-            left = CloseUntilTouch(grasp, true, item, out bool leftTouch);
-            right = CloseUntilTouch(grasp, false, item, out bool rightTouch);
-            return leftTouch && rightTouch;
+            return TryContacts(grasp, item, out left, out right, out _, out _);
+        }
+
+        /// <summary>Opposing inner-pad contacts, with actual surface points for the learning display.</summary>
+        public bool TryContacts(GripperGrasp grasp, Rigidbody item, out float left, out float right,
+            out Vector3 leftPoint, out Vector3 rightPoint)
+        {
+            bool leftTouch = PadContact(grasp, true, OpenOffset, OpenOffset, item, out left, out leftPoint);
+            bool rightTouch = PadContact(grasp, false, OpenOffset, OpenOffset, item, out right, out rightPoint);
+            // Two pads grazing the same edge with their tolerance shells is not a pinch.
+            return leftTouch && rightTouch && left + right > 2f * touchSkin;
         }
 
         public bool TryGrasp(GripperGrasp grasp, Rigidbody item, out float width)
@@ -110,20 +119,53 @@ namespace SortQuest
             }
         }
 
-        /// <summary>True if the finger at this offset touches the item's colliders.</summary>
+        /// <summary>True if the inner pad touches a surface facing that finger, not its tip or back.</summary>
         public bool FingerTouches(GripperGrasp pose, bool left, float offset, Rigidbody item)
         {
-            Vector3 center = pose.Position + pose.Rotation * FingerLocalCenter(left, offset);
-            Vector3 half = FingerSize * 0.5f + Vector3.one * touchSkin;
-            int count = Physics.OverlapBoxNonAlloc(center, half, OverlapBuffer, pose.Rotation, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < count; i++)
+            return PadContact(pose, left, offset, 0f, item, out _, out _);
+        }
+
+        private bool PadContact(GripperGrasp pose, bool left, float offset, float travel, Rigidbody item,
+            out float contactOffset, out Vector3 point)
+        {
+            contactOffset = 0f;
+            point = default;
+            if (item == null) return false;
+            float side = left ? -1f : 1f;
+            Vector3 direction = pose.ClosingAxis * -side;
+            bool found = false;
+            // Sample the same pad envelope drawn by GetParts, including its center.
+            foreach (float y in PadSamples)
+            foreach (float z in PadSamples)
             {
-                if (OverlapBuffer[i].attachedRigidbody == item)
+                Vector3 local = new Vector3(side * (offset + touchSkin), y * fingerWidth * .55f,
+                    fingertipPastGrasp - fingerLength * .3f + z * fingerLength * .275f);
+                int count = Physics.RaycastNonAlloc(pose.Position + pose.Rotation * local, direction,
+                    ContactHits, travel + 2f * touchSkin, GripperCollision.Mask, QueryTriggerInteraction.Ignore);
+                if (count == ContactHits.Length) return false;
+                float distance = float.MaxValue;
+                RaycastHit nearest = default;
+                for (int i = 0; i < count; i++)
                 {
-                    return true;
+                    if (ContactHits[i].collider.CompareTag("Player")) continue;
+                    if (ContactHits[i].distance < distance)
+                    {
+                        distance = ContactHits[i].distance;
+                        nearest = ContactHits[i];
+                    }
+                }
+                if (nearest.collider == null || nearest.collider.attachedRigidbody != item ||
+                    Vector3.Dot(nearest.normal, -direction) < .8660254f) continue; // Within 30 degrees of the pad normal.
+                float hitOffset = Vector3.Dot(nearest.point - pose.Position, pose.ClosingAxis) * side;
+                if (hitOffset < 0f || hitOffset > OpenOffset) continue;
+                if (!found || hitOffset > contactOffset)
+                {
+                    contactOffset = hitOffset;
+                    point = nearest.point;
+                    found = true;
                 }
             }
-            return false;
+            return found;
         }
 
         /// <summary>True if the fully open finger overlaps anything solid (the item, the belt, other trash).</summary>
@@ -159,29 +201,14 @@ namespace SortQuest
         }
 
         /// <summary>
-        /// Closes both fingers in 1 mm steps on an item that isn't moving. True if both end up touching it,
-        /// which is the robot's success rule. Used by the augmenter; the robot closes over time instead.
+        /// Predicts where the inner pads stop on opposing surfaces. Used by the augmenter;
+        /// the robot checks those same pads while closing over time.
         /// </summary>
         public bool TryClose(GripperGrasp grasp, Rigidbody item, out float closedWidth)
         {
-            float left = CloseUntilTouch(grasp, true, item, out bool leftTouch);
-            float right = CloseUntilTouch(grasp, false, item, out bool rightTouch);
+            bool touches = ContactOffsets(grasp, item, out float left, out float right);
             closedWidth = left + right;
-            return leftTouch && rightTouch;
-        }
-
-        private float CloseUntilTouch(GripperGrasp grasp, bool left, Rigidbody item, out bool touched)
-        {
-            for (float offset = OpenOffset; offset >= 0f; offset -= CloseStep)
-            {
-                if (FingerTouches(grasp, left, offset, item))
-                {
-                    touched = true;
-                    return offset;
-                }
-            }
-            touched = false;
-            return 0f;
+            return touches;
         }
     }
 }

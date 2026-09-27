@@ -25,6 +25,11 @@ namespace SortQuest
         [SerializeField] private float labelWidth = 0.6f;
         [SerializeField] private float barWidth = 0.45f;
         [SerializeField] private float rowHeight = 0.075f;
+        [Tooltip("Seconds per six-item page, so the expanded catalog fits the existing display.")]
+        [SerializeField, Min(3f)] private float pageSeconds = 8f;
+        private const int PageSize = 6;
+        private int page;
+        private float nextPage;
 
         private ItemType[] types;
         private bool dirty = true;
@@ -64,21 +69,22 @@ namespace SortQuest
         {
             rowHeight = Mathf.Max(rowHeight, .105f);
             types = (ItemType[])Enum.GetValues(typeof(ItemType));
-            values = new TextMeshPro[types.Length];
-            labels = new TextMeshPro[types.Length];
-            fills = new Transform[types.Length];
+            int rows = Mathf.Min(PageSize, types.Length);
+            values = new TextMeshPro[rows];
+            labels = new TextMeshPro[rows];
+            fills = new Transform[rows];
 
             float totalWidth = labelWidth + barWidth;
             float left = -totalWidth * 0.5f;
-            float top = rowHeight * types.Length * 0.5f;
+            float top = rowHeight * rows * 0.5f;
 
-            FacilityUi.Panel(transform, new Vector2(totalWidth + .1f, rowHeight * types.Length + .28f), new Vector3(0, .035f, 0), material);
+            FacilityUi.Panel(transform, new Vector2(totalWidth + .1f, rowHeight * rows + .28f), new Vector3(0, .035f, 0), material);
             title = VizUtil.CreateText("Title", transform, new Vector3(0f, top + 0.08f, 0f),
                 new Vector2(totalWidth, 0.12f), 0.5f, TextAlignmentOptions.Center);
             FacilityUi.Style(title, .6f, true);
             title.text = "GRASP AGREEMENT";
 
-            for (int i = 0; i < types.Length; i++)
+            for (int i = 0; i < rows; i++)
             {
                 float y = top - rowHeight * (i + 0.5f);
                 labels[i] = VizUtil.CreateText(types[i] + "Label", transform, new Vector3(left + labelWidth * 0.5f, y, 0f),
@@ -107,6 +113,12 @@ namespace SortQuest
 
         private void LateUpdate()
         {
+            if (types.Length > PageSize && Time.unscaledTime >= nextPage)
+            {
+                if (nextPage > 0) page = (page + 1) % Mathf.CeilToInt((float)types.Length / PageSize);
+                nextPage = Time.unscaledTime + Mathf.Max(3f, pageSeconds);
+                dirty = true;
+            }
             if (dirty)
             {
                 dirty = false;
@@ -117,21 +129,29 @@ namespace SortQuest
         private void Refresh()
         {
             float left = -(labelWidth + barWidth) * 0.5f;
-            float top = rowHeight * types.Length * 0.5f;
-            title.text = $"GRASP AGREEMENT\n<size=60%>{GripperCatalog.CurrentOrStandard(catalog).displayName} • learned consistency</size>";
-            for (int i = 0; i < types.Length; i++)
+            float top = rowHeight * labels.Length * 0.5f;
+            title.text = $"GRASP AGREEMENT\n<size=60%>{GripperCatalog.CurrentOrStandard(catalog).displayName} • page {page + 1}/{Mathf.CeilToInt((float)types.Length / PageSize)}</size>";
+            for (int i = 0; i < labels.Length; i++)
             {
+                int index = page * PageSize + i;
+                bool visible = index < types.Length;
+                labels[i].gameObject.SetActive(visible);
+                values[i].gameObject.SetActive(visible);
+                fills[i].gameObject.SetActive(visible);
+                if (!visible) continue;
+                ItemType type = types[index];
+                VizUtil.SetColor(fills[i].GetComponent<Renderer>(), TrashTypes.BinColor(TrashTypes.CorrectBin(type)));
                 float y = top - rowHeight * (i + 0.5f);
-                string itemName = TrashTypes.DisplayName(types[i]);
+                string itemName = TrashTypes.DisplayName(type);
                 float confidence = 0f;
-                if (policy != null && policy.TryGetLearnedGrasp(types[i], out GraspChoice choice))
+                if (policy != null && policy.TryGetLearnedGrasp(type, out GraspChoice choice))
                 {
                     confidence = choice.Confidence;
                     // People's grasps for this item; the suction cup learns from converted, practiced versions of them.
                     int taught = 0;
                     if (dataset != null)
                     {
-                        foreach (GraspRecord record in dataset.GoodGrasps(types[i]))
+                        foreach (GraspRecord record in dataset.GoodGrasps(type))
                         {
                             if (record.source == GraspRecord.SourceHuman) taught++;
                         }

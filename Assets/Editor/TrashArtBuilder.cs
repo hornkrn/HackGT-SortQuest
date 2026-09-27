@@ -38,7 +38,7 @@ namespace SortQuest.Editor
             material.enableInstancing=true;
             UnityEditor.Rendering.Universal.ShaderGUI.SimpleLitGUI.SetMaterialKeywords(material);
             var prefabs=new List<TrashItem>();var rows=new List<string>();int maxTriangles=0,totalTriangles=0;
-            foreach(ItemType type in Enum.GetValues(typeof(ItemType)))
+            foreach(ItemType type in ((ItemType[])Enum.GetValues(typeof(ItemType))).Take(TrashArtAtlas.Names.Length))
             {
                 string basePath="Assets/Prefabs/"+type+".prefab";
                 var original=AssetDatabase.LoadAssetAtPath<GameObject>(basePath);
@@ -105,7 +105,7 @@ namespace SortQuest.Editor
                 var seen=new HashSet<TrashItem>();
                 for(int i=0;i<4800;i++)seen.Add((TrashItem)method.Invoke(spawner,null));
                 if(seen.Count!=48||seen.Contains(null))throw new InvalidOperationException("Incomplete random pool.");
-                foreach(ItemType type in Enum.GetValues(typeof(ItemType)))
+                foreach(ItemType type in ((ItemType[])Enum.GetValues(typeof(ItemType))).Take(TrashArtAtlas.Names.Length))
                 {
                     if(prefabs.Count(p=>p.ItemType==type)!=Variants)throw new InvalidOperationException("Unequal type weighting.");
                     spawner.OnlyType=type;seen.Clear();

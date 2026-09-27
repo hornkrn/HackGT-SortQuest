@@ -16,7 +16,7 @@ namespace SortQuest
 
     public static class GripperCollision
     {
-        public const int Version = 2;
+        public const int Version = 4; // Expanded catalog and mesh-fitted item colliders; recheck older practice.
         private static readonly Collider[] Hits = new Collider[128];
         private static readonly List<GripperPart> Parts = new List<GripperPart>(20);
         // Query-only geometry: no colliders are added to the visual robot or the player's hands.
@@ -83,7 +83,8 @@ namespace SortQuest
             // Predict actual asymmetric contact offsets, rather than trusting a human pinch width.
             if (!profile.IsSuction)
             {
-                profile.parallel.ContactOffsets(grasp, target, out float left, out float right);
+                if (!profile.parallel.ContactOffsets(grasp, target, out float left, out float right))
+                { reason = "no_contact"; return false; }
                 if (BodyOverlaps(profile.Model, grasp, left * 2, ignore, target, right))
                 { reason = "collision_at_grasp"; return false; }
                 // Closing sweeps the carriages and pads too, not only the endpoint.
@@ -95,6 +96,8 @@ namespace SortQuest
             }
             else if (BodyOverlaps(profile.Model, grasp, width, ignore, target))
             { reason = "collision_at_grasp"; return false; }
+            if (profile.IsSuction && !profile.suction.TrySeal(grasp, target))
+            { reason = "no_seal"; return false; }
             reason = "none";
             return true;
         }

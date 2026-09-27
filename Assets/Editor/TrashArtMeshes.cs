@@ -125,7 +125,7 @@ namespace SortQuest.Editor
         }
         private static Vector2 P(float y,float radius)=>new Vector2(y,radius);
 
-        private sealed class Geometry
+        internal sealed class Geometry
         {
             private readonly List<Vector3> positions=new List<Vector3>(),normals=new List<Vector3>();
             private readonly List<Vector2> uvs=new List<Vector2>();
