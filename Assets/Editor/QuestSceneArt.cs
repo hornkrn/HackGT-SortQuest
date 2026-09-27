@@ -74,7 +74,8 @@ namespace SortQuest.Editor
             string path = Folder + "/PeripheralDetails.asset";
             var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             if (existing == null) AssetDatabase.CreateAsset(mesh, path);
-            else { EditorUtility.CopySerialized(mesh, existing); UnityEngine.Object.DestroyImmediate(mesh); mesh = existing; }
+            // Mesh API, not CopySerialized, so Unity also refreshes what it draws (see Apply).
+            else { g.WriteTo(existing); EditorUtility.SetDirty(existing); UnityEngine.Object.DestroyImmediate(mesh); mesh = existing; }
             var details = new GameObject(detailName, typeof(MeshFilter), typeof(MeshRenderer));
             details.layer = 2;
             details.GetComponent<MeshFilter>().sharedMesh = mesh;
