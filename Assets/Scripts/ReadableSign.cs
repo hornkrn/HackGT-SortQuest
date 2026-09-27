@@ -25,6 +25,10 @@ namespace SortQuest
             text.margin = new Vector4(.02f, .015f, .02f, .015f);
             sign.backing = new GameObject("Sign backing (visual only)");
             sign.backing.transform.SetParent(text.transform, false);
+            // Text and backing are both transparent, so Unity would order them by distance to the camera. From some
+            // angles that draws the dark face over the text and the sign looks black. Always draw the backing first.
+            var textRenderer = text.GetComponent<Renderer>();
+            if (textRenderer != null) textRenderer.sortingOrder = 1;
             Panel("Frame", new Vector3(0, 0, .008f), size + new Vector2(.025f, .025f), accent);
             Panel("Face", new Vector3(0, 0, .005f), size, new Color(.025f, .042f, .055f));
             Panel("Category stripe", new Vector3(-size.x * .5f + .007f, 0, .002f), new Vector2(.014f, size.y), accent);
@@ -35,6 +39,7 @@ namespace SortQuest
                 var renderer = VizUtil.CreateShape(name, sign.backing.transform, VizUtil.QuadMesh, material, color);
                 renderer.transform.localPosition = position;
                 renderer.transform.localScale = new Vector3(dimensions.x, dimensions.y, 1);
+                renderer.sortingOrder = -1;
             }
         }
 

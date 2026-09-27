@@ -44,14 +44,12 @@ namespace SortQuest
             {
                 if (bin.gameObject.scene != gameObject.scene) continue;
                 foreach (var text in bin.GetComponentsInChildren<TMP_Text>())
-                {
-                    text.text = bin.BinType == BinType.Hazardous
-                        ? "<size=68%>HAZARDOUS</size>\n<size=50%>AA battery\nPower bank</size>"
-                        : TrashTypes.BinSignText(bin.BinType);
-                    text.transform.position += Vector3.up * .24f;
-                    ReadableSign.Apply(text, new Vector2(.46f, .23f), .9f, TrashTypes.BinColor(bin.BinType), panelMaterial);
-                }
+                    PlaceBinLabel(bin, text);
             }
+            // Item names live on the guide board to the player's left, not above each item on the belt.
+            var guide = new GameObject("Trash guide");
+            guide.transform.SetParent(transform, false);
+            guide.AddComponent<TrashGuide>();
             foreach (var held in FindObjectsByType<HeldItemLabel>(FindObjectsSortMode.None))
                 if (held.gameObject.scene == gameObject.scene)
                     ReadableSign.Apply(held.GetComponent<TMP_Text>(), new Vector2(.4f, .105f), .55f, new Color(.36f, .68f, .7f), panelMaterial);
@@ -85,12 +83,34 @@ namespace SortQuest
         {
             items.RemoveWhere(existing => existing == null);
             if (!items.Add(item)) return;
-            if (item.GetComponent<ItemNameTag>() == null) item.gameObject.AddComponent<ItemNameTag>().Initialize(item, panelMaterial);
             item.Grabbed += Grab;
             item.Released += Release;
             item.Sorted += Sort;
             item.PickedByRobot += Robot;
             item.Missed += Miss;
+        }
+
+        /// <summary>
+        /// Prints the bin's sign on the sloped label along the bin's top front edge (scene art), like a real label:
+        /// no billboarding and no floating card. The label is opaque, so the text can't be hidden behind it.
+        /// </summary>
+        private static void PlaceBinLabel(SortingBin bin, TMP_Text text)
+        {
+            var billboard = text.GetComponent<Billboard>();
+            if (billboard != null) Dispose(billboard);
+            Transform label = text.transform;
+            label.SetParent(bin.transform, false);
+            label.localPosition = TrashGuideLayout.BinLabelCenter + TrashGuideLayout.BinLabelNormal * TrashGuideLayout.BinLabelTextLift;
+            label.localRotation = TrashGuideLayout.BinLabelRotation;
+            text.rectTransform.sizeDelta = TrashGuideLayout.BinLabelSize - new Vector2(.05f, .035f);
+            text.color = Color.white;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = TextAlignmentOptions.Center;
+            text.enableAutoSizing = true;
+            text.fontSizeMax = .42f;
+            text.fontSizeMin = .2f;
+            text.margin = Vector4.zero;
+            text.text = TrashTypes.BinSignText(bin.BinType);
         }
 
         private void Grab(TrashItem item)

@@ -16,6 +16,10 @@ namespace SortQuest.Editor
     public static class QuestSceneArt
     {
         private const string RootName = "Visual Set Dressing";
+        // The only physics object this pass makes: an invisible wall at the loading bay guardrail. It lives outside
+        // the art root, which must stay free of physics components.
+        private const string BarrierName = "Loading Bay Barrier";
+        private const float BarrierZ = -4.42f;
         private const string Folder = "Assets/Art/QuestLab";
         private static readonly Color Navy = Hex("25343A"), Ink = Hex("17262C"), Slate = Hex("647174");
         private static readonly Color Ivory = Hex("CED0C5"), White = Hex("F2EEDA"), Alloy = Hex("8A9794");
@@ -33,6 +37,8 @@ namespace SortQuest.Editor
             var before = Snapshot(scene);
             var old = scene.GetRootGameObjects().FirstOrDefault(o => o.name == RootName);
             if (old != null) UnityEngine.Object.DestroyImmediate(old);
+            var oldBarrier = scene.GetRootGameObjects().FirstOrDefault(o => o.name == BarrierName);
+            if (oldBarrier != null) UnityEngine.Object.DestroyImmediate(oldBarrier);
             EnsureFolder("Assets/Art"); EnsureFolder(Folder);
             palette = AssetDatabase.LoadAssetAtPath<Material>(Folder + "/Palette.mat");
             if (palette == null)
@@ -42,7 +48,7 @@ namespace SortQuest.Editor
             }
             root = new GameObject(RootName).transform;
             zones.Clear();
-            Architecture(); Landscape(); Workcell(scene); Storage(); FloorDetails(); Signage();
+            Architecture(); LoadingBay(); Outdoors(); Landscape(); Workcell(scene); TrashGuideBoard(); Storage(); FloorDetails(); Signage();
             int triangles = 0;
             foreach (var zone in zones)
             {
@@ -51,7 +57,13 @@ namespace SortQuest.Editor
                 string path = Folder + "/" + zone.Key + ".asset";
                 var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
                 if (existing == null) AssetDatabase.CreateAsset(mesh, path);
-                else { EditorUtility.CopySerialized(mesh, existing); UnityEngine.Object.DestroyImmediate(mesh); mesh = existing; }
+                else
+                {
+                    // Rewrite through the Mesh API so Unity also refreshes what it draws. CopySerialized updated the
+                    // file but could leave the old geometry rendering (mixed old and new data) until a restart.
+                    zone.Value.WriteTo(existing); EditorUtility.SetDirty(existing);
+                    UnityEngine.Object.DestroyImmediate(mesh); mesh = existing;
+                }
                 var go = new GameObject(zone.Key, typeof(MeshFilter), typeof(MeshRenderer));
                 go.transform.SetParent(root, false); go.layer = 2;
                 go.GetComponent<MeshFilter>().sharedMesh = mesh;
@@ -69,6 +81,7 @@ namespace SortQuest.Editor
                 mat.SetColor("_BaseColor", Hex("505B5D")); mat.SetFloat("_Smoothness", .15f);
                 floor.sharedMaterial = mat;
             }
+            LoadingBayBarrier();
             ConfigureMobile();
             RenderSettings.ambientMode = AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = Hex("C7DDD9"); RenderSettings.ambientEquatorColor = Hex("83A7AB"); RenderSettings.ambientGroundColor = Hex("354F60");
@@ -79,12 +92,13 @@ namespace SortQuest.Editor
             if (root.GetComponentsInChildren<Collider>(true).Length != 0 || root.GetComponentsInChildren<Rigidbody>(true).Length != 0)
                 throw new InvalidOperationException("Art must not contain physics components.");
             int renderers = root.GetComponentsInChildren<Renderer>().Length;
-            if (triangles > 18000 || renderers > 24) throw new InvalidOperationException("Art exceeded its mesh/renderer budget.");
+            // Raised from 18,000 for the loading bay, outdoor scenery, and trash guide board (about 4,000 triangles).
+            if (triangles > 20000 || renderers > 24) throw new InvalidOperationException("Art exceeded its mesh/renderer budget.");
             AssetDatabase.SaveAssets(); EditorSceneManager.MarkSceneDirty(scene); EditorSceneManager.SaveScene(scene);
             // Retire only the previous pass's generated materials, now unused by the scene.
             if (AssetDatabase.IsValidFolder("Assets/Materials/VisualPolish")) AssetDatabase.DeleteAsset("Assets/Materials/VisualPolish");
             Directory.CreateDirectory("docs");
-            File.WriteAllText("docs/QUEST_VISUAL_AUDIT.md", $"# Quest scene art audit\n\nGenerated from the saved scene by the Unity editor.\n\n- Decorative mesh triangles: **{triangles:N0}** (excludes text).\n- Decorative mesh renderers: **{zones.Count}**, each using the same opaque palette material.\n- Total decorative renderers including text: **{renderers}**.\n- Added textures, realtime lights, shadow casters, colliders, rigidbodies, and runtime update scripts: **0**.\n- Original nonvisual component snapshots verified unchanged: **{before.Count:N0}**.\n- URP mobile: existing 0.8 render scale and 4x MSAA retained; one 1024px main-light shadow map, 12m range; no additional lights, depth texture, opaque texture, HDR, or added post-processing.\n\nThese are scene complexity checks, not headset frame-time measurements. The original robot/hand/graph renderers, camera capture and training simulation are additional costs. A standalone Quest 2 run with CPU/GPU profiling is required before claiming a stable frame rate.\n\nArt uses opaque vertex colors with directional shading computed at build time. Geometry is combined by room zone so culling remains useful. The custom shader supports Unity stereo instancing/multiview macros. No transparent window layers or full-screen effects are used.\n\n## On-device validation\n\nBuild a Development APK, connect the Quest 2, and measure CPU/GPU frame time during human sorting, augmentation/training, robot trials, and camera capture. At 72 Hz the total frame budget is 13.89 ms; leave headroom and check thermals over 15 minutes. Check text legibility, both-eye rendering, hand tracking, and all bin interactions.\n\nSources: [Meta performance guidance](https://developers.meta.com/horizon/documentation/unity/unity-perf/), [Unity untethered XR optimization](https://docs.unity.com/en-us/engine/6000.5/manual/xr/graphics/untethered-device-optimization).\n");
+            File.WriteAllText("docs/QUEST_VISUAL_AUDIT.md", $"# Quest scene art audit\n\nGenerated from the saved scene by the Unity editor.\n\n- Decorative mesh triangles: **{triangles:N0}** (excludes text).\n- Decorative mesh renderers: **{zones.Count}**, each using the same opaque palette material.\n- Total decorative renderers including text: **{renderers}**.\n- Added textures, realtime lights, shadow casters, rigidbodies, and runtime update scripts: **0**.\n- Colliders: none in the art. One separate invisible box collider (Loading Bay Barrier) stops walking out through the open loading bay door.\n- The outdoor yard (sky, mountains, trees, road) is one opaque vertex-colored mesh behind the room, culled whenever the player faces away from it.\n- Original nonvisual component snapshots verified unchanged: **{before.Count:N0}**.\n- URP mobile: existing 0.8 render scale and 4x MSAA retained; one 1024px main-light shadow map, 12m range; no additional lights, depth texture, opaque texture, HDR, or added post-processing.\n\nThese are scene complexity checks, not headset frame-time measurements. The original robot/hand/graph renderers, camera capture and training simulation are additional costs. A standalone Quest 2 run with CPU/GPU profiling is required before claiming a stable frame rate.\n\nArt uses opaque vertex colors with directional shading computed at build time. Geometry is combined by room zone so culling remains useful. The custom shader supports Unity stereo instancing/multiview macros. No transparent window layers or full-screen effects are used.\n\n## On-device validation\n\nBuild a Development APK, connect the Quest 2, and measure CPU/GPU frame time during human sorting, augmentation/training, robot trials, and camera capture. At 72 Hz the total frame budget is 13.89 ms; leave headroom and check thermals over 15 minutes. Check text legibility, both-eye rendering, hand tracking, and all bin interactions.\n\nSources: [Meta performance guidance](https://developers.meta.com/horizon/documentation/unity/unity-perf/), [Unity untethered XR optimization](https://docs.unity.com/en-us/engine/6000.5/manual/xr/graphics/untethered-device-optimization).\n");
             Debug.Log($"QUEST_ART_PASS: {triangles} triangles, {renderers} decorative renderers; {before.Count} original nonvisual components unchanged.");
         }
 
@@ -190,15 +204,14 @@ namespace SortQuest.Editor
             }
             // Cosmetic collars stay outside bin walls and below their openings.
             var bins=new[]{"Bin_Metal","Bin_Plastic","Bin_Paper","Bin_Hazardous"};
-            var colors=new[]{Hex("578EFF"),Hex("F5D852"),Hex("55CF81"),Hex("F66B64")};
+            var types=new[]{BinType.Metal,BinType.Plastic,BinType.Paper,BinType.Hazardous};
             for(int i=0;i<bins.Length;i++)
             {
                 var bin=Find(scene,bins[i]); if(bin==null)continue;
                 Vector3 p=bin.transform.position;
+                Color accent=TrashGuideLayout.BinAccent(types[i]);
                 Box(p+new Vector3(0,.055f,-.204f),new Vector3(.42f,.08f,.025f),Navy,.014f);
-                Box(p+new Vector3(0,.37f,-.207f),new Vector3(.29f,.15f,.015f),Navy,.025f);
-                Box(p+new Vector3(0,.265f,-.215f),new Vector3(.18f,.018f,.01f),colors[i],.004f,true);
-                for(int j=0;j<=i;j++)Box(p+new Vector3(-i*.024f+j*.048f,.375f,-.22f),new Vector3(.02f,.05f,.008f),colors[i],.004f,true);
+                BinLabel(p,accent);
             }
             // Rear equipment islands away from the interaction volume.
             Zone("Equipment");
@@ -304,6 +317,267 @@ namespace SortQuest.Editor
             }
         }
 
+        /// <summary>
+        /// A sloped label along a bin's top front edge, tilted up toward the player: a solid wedge in the bin's color
+        /// (so nothing behind it shows through) with a dark printed face. InteractionFeedback prints the text on it.
+        /// </summary>
+        private static void BinLabel(Vector3 bin, Color accent)
+        {
+            Vector2 size = TrashGuideLayout.BinLabelSize;
+            Quaternion tilt = TrashGuideLayout.BinLabelRotation;
+            Vector3 normal = TrashGuideLayout.BinLabelNormal, up = tilt * Vector3.up, right = Vector3.right;
+            Vector3 top = bin + TrashGuideLayout.BinLabelTop, center = bin + TrashGuideLayout.BinLabelCenter;
+            Vector3 half = right * size.x * .5f, drop = -up * size.y;
+            Vector3 topLeft = top - half, topRight = top + half, bottomLeft = topLeft + drop, bottomRight = topRight + drop;
+            // Where the underside meets the bin's front wall.
+            Vector3 wallLeft = new Vector3(bottomLeft.x, bottomLeft.y, top.z), wallRight = new Vector3(bottomRight.x, bottomRight.y, top.z);
+            g.Polygon(new[] { topLeft, topRight, bottomRight, bottomLeft }, normal, accent, true);
+            g.Polygon(new[] { bottomLeft, bottomRight, wallRight, wallLeft }, Vector3.down, accent);
+            g.Polygon(new[] { topLeft, bottomLeft, wallLeft }, Vector3.left, accent);
+            g.Polygon(new[] { topRight, wallRight, bottomRight }, Vector3.right, accent);
+            // Dark face inset from the colored border.
+            Vector3 faceCenter = center + normal * TrashGuideLayout.BinLabelFaceLift;
+            Vector3 w = right * (size.x * .5f - .012f), h = up * (size.y * .5f - .012f);
+            g.Polygon(new[] { faceCenter - w + h, faceCenter + w + h, faceCenter + w - h, faceCenter - w - h }, normal, Ink);
+        }
+
+        private static void LoadingBay()
+        {
+            // The wall behind the player, matching the side walls, with a roll-up door left 70% open onto the yard.
+            Zone("Architecture_Loading_Bay");
+            const float z = -4.75f, half = 1.8f, height = 3f, open = .7f, wallEdge = 4.48f;
+            float inner = z + .09f; // the wall's room-facing surface
+            foreach (int s in new[] { -1, 1 })
+            {
+                float cx = s * (half + wallEdge) * .5f, width = wallEdge - half;
+                Box(new Vector3(cx, 2.15f, z), new Vector3(width, 4.3f, .18f), Slate, .035f);
+                Box(new Vector3(cx, .55f, inner + .04f), new Vector3(width, 1.1f, .08f), Navy, .03f);
+                Box(new Vector3(cx, 1.12f, inner + .09f), new Vector3(width, .04f, .02f), Amber, .006f);
+                Box(new Vector3(cx, 2.45f, inner + .06f), new Vector3(1.96f, 2.56f, .12f), Ivory, .07f);
+                for (int rib = 0; rib < 8; rib++)
+                    Box(new Vector3(cx - .8f + rib * .23f, 2.45f, inner + .13f), new Vector3(.018f, 2.38f, .025f), Ivory, 0);
+                Box(new Vector3(cx, 1.19f, inner + .135f), new Vector3(1.5f, .034f, .04f), Alloy, .01f);
+            }
+            Box(new Vector3(0, (height + 4.3f) * .5f, z), new Vector3(2 * half, 4.3f - height, .18f), Slate, .035f);
+            // Steel door guides, with hazard bands where people and forklifts pass.
+            foreach (int s in new[] { -1, 1 })
+            {
+                float x = s * (half + .07f);
+                Box(new Vector3(x, 1.525f, z + .13f), new Vector3(.14f, 3.05f, .26f), Alloy, .02f);
+                for (int k = 0; k < 6; k++)
+                    Box(new Vector3(x, .1f + k * .2f, z + .262f), new Vector3(.145f, .2f, .006f), k % 2 == 0 ? Amber : Navy, 0);
+            }
+            // Drum housing that the door rolls into.
+            Box(new Vector3(0, 3.25f, z + .23f), new Vector3(2 * half + .3f, .42f, .28f), Navy, .04f);
+            Box(new Vector3(0, 3.05f, z + .372f), new Vector3(2 * half + .2f, .03f, .02f), Alloy, .005f);
+            // The door curtain: rolled 70% of the way up, so it only covers the top of the opening.
+            float bottom = height * open, top = 3.04f;
+            Box(new Vector3(0, (bottom + top) * .5f, z + .04f), new Vector3(2 * half, top - bottom, .04f), Ivory, .008f);
+            for (float y = bottom + .07f; y < top - .03f; y += .09f)
+                Box(new Vector3(0, y, z + .065f), new Vector3(2 * half - .04f, .014f, .012f), Alloy, 0);
+            Box(new Vector3(0, bottom + .025f, z + .05f), new Vector3(2 * half + .02f, .05f, .08f), Navy, .01f);
+            Box(new Vector3(0, bottom - .005f, z + .05f), new Vector3(2 * half - .02f, .02f, .06f), Ink, 0);
+            Box(new Vector3(0, bottom + .09f, z + .1f), new Vector3(.2f, .03f, .03f), Amber, .005f);
+            // Threshold plate and a painted keep-out line.
+            Box(new Vector3(0, .006f, z), new Vector3(2 * half, .012f, .3f), Alloy, .003f);
+            Box(new Vector3(0, .008f, BarrierZ + .14f), new Vector3(2 * half + .4f, .003f, .07f), Amber, 0, true);
+            // Guardrail across the opening, like the storage rails. The Loading Bay Barrier collider sits on this line.
+            float[] posts = { -1.65f, -.55f, .55f, 1.65f };
+            foreach (float x in posts)
+            {
+                Cylinder(new Vector3(x, .5f, BarrierZ), .035f, 1f, Amber, 10);
+                Box(new Vector3(x, .025f, BarrierZ), new Vector3(.15f, .05f, .15f), Navy, .015f);
+            }
+            Beam(new Vector3(posts[0], .92f, BarrierZ), new Vector3(posts[3], .92f, BarrierZ), .05f, .05f, Amber);
+            Beam(new Vector3(posts[0], .52f, BarrierZ), new Vector3(posts[3], .52f, BarrierZ), .05f, .05f, Amber);
+            // Sign over the door, readable from inside the room.
+            Box(new Vector3(0, 3.86f, inner + .015f), new Vector3(2.3f, .34f, .03f), Ivory, .02f);
+            Text("LOADING BAY 02", new Vector3(0, 3.86f, inner + .032f), 2.1f, .3f, 1.9f, Navy, Quaternion.Euler(0, 180, 0), true);
+        }
+
+        private static void LoadingBayBarrier()
+        {
+            // Invisible wall on the guardrail line so locomotion can't carry the player out into the scenery.
+            // Ignore Raycast layer: the robot's camera and collision checks never see it.
+            var go = new GameObject(BarrierName) { layer = 2 };
+            var box = go.AddComponent<BoxCollider>();
+            box.center = new Vector3(0, 1.5f, BarrierZ);
+            box.size = new Vector3(9f, 3f, .2f);
+        }
+
+        private static void Outdoors()
+        {
+            // The yard seen through the loading bay door: flat opaque vertex colors, all behind the back wall, so
+            // this mesh is culled whenever the player faces the belt. No textures, lights, or transparency.
+            Zone("Outdoor_Scenery");
+            const float edge = -4.84f;
+            Color grass = Hex("5E8F67"), concrete = Hex("7E8886"), asphalt = Hex("3D4649"), paint = Hex("E7D9A6");
+            Flat(new[] { new Vector3(-160, .005f, edge), new Vector3(160, .005f, edge), new Vector3(160, .005f, -170), new Vector3(-160, .005f, -170) }, grass);
+            Flat(new[] { new Vector3(-2.6f, .01f, edge), new Vector3(2.6f, .01f, edge), new Vector3(2.6f, .01f, -10), new Vector3(-2.6f, .01f, -10) }, concrete);
+            Flat(new[] { new Vector3(-2.2f, .012f, -10), new Vector3(2.2f, .012f, -10), new Vector3(3.2f, .012f, -60), new Vector3(-3.2f, .012f, -60) }, asphalt);
+            for (int i = 0; i < 8; i++)
+            {
+                float z0 = -12 - i * 6f;
+                Flat(new[] { new Vector3(-.08f, .016f, z0), new Vector3(.08f, .016f, z0), new Vector3(.08f, .016f, z0 - 2.5f), new Vector3(-.08f, .016f, z0 - 2.5f) }, paint);
+            }
+
+            // Sky: the back half of a dome around the door, from a pale horizon to blue overhead.
+            var origin = new Vector3(0, 0, -4.75f);
+            const float sky = 320f;
+            float[] elevation = { -6, 4, 14, 30, 52, 90 };
+            Color[] shade = { Hex("D8EDE3"), Hex("C4E6DC"), Hex("A2D2CC"), Hex("78B3C2"), Hex("4F8BAA"), Hex("36668A") };
+            const int segments = 10;
+            for (int e = 0; e < elevation.Length - 1; e++)
+                for (int k = 0; k < segments; k++)
+                {
+                    float a0 = Mathf.Lerp(90, 270, (float)k / segments), a1 = Mathf.Lerp(90, 270, (float)(k + 1) / segments);
+                    Vector3 p00 = origin + Direction(a0, elevation[e]) * sky, p10 = origin + Direction(a1, elevation[e]) * sky;
+                    Vector3 p11 = origin + Direction(a1, elevation[e + 1]) * sky, p01 = origin + Direction(a0, elevation[e + 1]) * sky;
+                    g.Quad(p00, p10, p11, p01, (origin - (p00 + p11) * .5f).normalized, shade[e], shade[e + 1]);
+                }
+            Vector3 sun = Direction(205, 24);
+            Disc(origin + sun * (sky - 10), 14, Hex("FFF6D8"), 20, Quaternion.FromToRotation(Vector3.up, -sun));
+
+            // Mountains far out, the tallest with snow, and a low ridge of hills in front of them.
+            Mountain(new Vector3(-55, 0, -95), 38, 34, Hex("4E6E78"), White, 1);
+            Mountain(new Vector3(8, 0, -120), 50, 46, Hex("47666F"), White, 2);
+            Mountain(new Vector3(70, 0, -100), 40, 30, Hex("557680"), White, 3);
+            Mountain(new Vector3(-105, 0, -70), 30, 20, Hex("5C7C78"), null, 4);
+            Mountain(new Vector3(105, 0, -65), 28, 18, Hex("5C7C78"), null, 5);
+            Mountain(new Vector3(38, 0, -78), 22, 14, Hex("61837A"), null, 6);
+            Ridge(-58, 5, 11, Hex("548C8A"), 7);
+
+            // Pine trees on both sides of the road, leaving the view down it clear.
+            var random = new System.Random(20260927);
+            Color trunk = Hex("5B4636");
+            Color[] needles = { Hex("1E4B45"), Hex("2A5E50"), Hex("3B6E4F") };
+            int placed = 0;
+            for (int attempt = 0; attempt < 600 && placed < 46; attempt++)
+            {
+                float tz = -9f - (float)random.NextDouble() * 38f;
+                float spread = 8f - tz * 1.1f;
+                float tx = ((float)random.NextDouble() * 2f - 1f) * spread;
+                if (Mathf.Abs(tx) < 4.5f - tz * .05f) continue;
+                float size = .8f + (float)random.NextDouble() * .7f;
+                Color low = needles[placed % 3], high = Color.Lerp(low, Hex("5E8F67"), .25f);
+                Box(new Vector3(tx, .5f * size, tz), new Vector3(.2f, 1f, .2f) * size, trunk, 0);
+                Cone(new Vector3(tx, .7f * size, tz), 1.1f * size, 2.3f * size, low, 6);
+                Cone(new Vector3(tx, 1.9f * size, tz), .8f * size, 2f * size, high, 6);
+                placed++;
+            }
+        }
+
+        private static void TrashGuideBoard()
+        {
+            // The trash guide board to the player's left. TrashGuide adds the models and text at runtime, using the
+            // same TrashGuideLayout, so both line up.
+            Zone("Trash_Guide");
+            Quaternion q = TrashGuideLayout.BoardRotation;
+            void Part(Vector3 local, Vector3 size, Color c, float bevel = .01f, bool glow = false) =>
+                Box(TrashGuideLayout.ToWorld(local), size, c, bevel, glow, q);
+            float bottom = TrashGuideLayout.BoardBottom, top = TrashGuideLayout.BoardTop, width = TrashGuideLayout.BoardWidth;
+            float mid = (bottom + top) * .5f;
+            foreach (int s in new[] { -1, 1 })
+            {
+                float x = s * (width * .5f - .12f);
+                Part(new Vector3(x, bottom * .5f, .04f), new Vector3(.06f, bottom, .06f), Alloy);
+                Part(new Vector3(x, .025f, .04f), new Vector3(.1f, .05f, .5f), Navy, .015f);
+            }
+            Part(new Vector3(0, mid, .035f), new Vector3(width + .08f, top - bottom + .08f, .05f), Ivory, .02f);
+            Part(new Vector3(0, mid, 0), new Vector3(width, top - bottom, 2 * TrashGuideLayout.FaceDepth), Ink, .006f);
+            Part(new Vector3(0, top + .065f, .035f), new Vector3(width + .14f, .05f, .09f), Navy, .012f);
+            Part(new Vector3(0, TrashGuideLayout.TitleY - .105f, -.012f), new Vector3(width - .12f, .008f, .004f), Teal, 0, true);
+            for (int c = 0; c < TrashGuideLayout.Columns.Length; c++)
+            {
+                BinType bin = TrashGuideLayout.Columns[c];
+                Color accent = TrashGuideLayout.BinAccent(bin);
+                float x = TrashGuideLayout.ColumnX(c);
+                Part(new Vector3(x, TrashGuideLayout.HeaderY, -.014f),
+                    new Vector3(TrashGuideLayout.ColumnWidth - .04f, TrashGuideLayout.HeaderHeight, .008f), accent, .004f, true);
+                if (c > 0)
+                    Part(new Vector3(x - TrashGuideLayout.ColumnWidth * .5f, (TrashGuideLayout.SlotBottom + TrashGuideLayout.HeaderY) * .5f, -.012f),
+                        new Vector3(.008f, TrashGuideLayout.HeaderY - TrashGuideLayout.SlotBottom + .04f, .004f), Slate, 0);
+                var items = TrashGuideLayout.ItemsFor(bin);
+                for (int i = 0; i < items.Count; i++)
+                {
+                    Vector3 slot = TrashGuideLayout.Slot(c, i, items.Count);
+                    Part(new Vector3(slot.x, TrashGuideLayout.ShelfY(slot) - .006f, -TrashGuideLayout.FaceDepth - TrashGuideLayout.ShelfDepth * .5f),
+                        new Vector3(TrashGuideLayout.ColumnWidth - .05f, .012f, TrashGuideLayout.ShelfDepth), Alloy, .003f);
+                    Part(new Vector3(slot.x, TrashGuideLayout.LabelY(slot) - .034f, -.012f), new Vector3(.2f, .006f, .004f), accent, 0, true);
+                }
+            }
+        }
+
+        private static Vector3 Direction(float azimuth, float elevation)
+        {
+            float a = azimuth * Mathf.Deg2Rad, e = elevation * Mathf.Deg2Rad;
+            return new Vector3(Mathf.Sin(a) * Mathf.Cos(e), Mathf.Sin(e), Mathf.Cos(a) * Mathf.Cos(e));
+        }
+
+        private static void Flat(Vector3[] points, Color c) => g.Polygon(points, Vector3.up, c);
+
+        /// <summary>A face's normal, flipped if needed to point away from a vertical axis through <paramref name="center"/>.</summary>
+        private static Vector3 Outward(Vector3[] points, Vector3 center)
+        {
+            Vector3 n = Vector3.Cross(points[1] - points[0], points[2] - points[0]).normalized;
+            Vector3 mid = Vector3.zero;
+            foreach (var p in points) mid += p / points.Length;
+            return Vector3.Dot(n, mid - new Vector3(center.x, mid.y, center.z)) < 0 ? -n : n;
+        }
+
+        private static void Cone(Vector3 baseCenter, float radius, float height, Color c, int sides)
+        {
+            Vector3 apex = baseCenter + Vector3.up * height;
+            for (int i = 0; i < sides; i++)
+            {
+                float a0 = i * Mathf.PI * 2 / sides, a1 = (i + 1) * Mathf.PI * 2 / sides;
+                var face = new[] { baseCenter + new Vector3(Mathf.Cos(a0), 0, Mathf.Sin(a0)) * radius,
+                    baseCenter + new Vector3(Mathf.Cos(a1), 0, Mathf.Sin(a1)) * radius, apex };
+                g.Polygon(face, Outward(face, baseCenter), c);
+            }
+        }
+
+        /// <summary>A low-poly mountain: a jagged base ring, a ring at the snow line, and a peak.</summary>
+        private static void Mountain(Vector3 center, float radius, float height, Color rock, Color? snow, int seed)
+        {
+            var random = new System.Random(seed);
+            const int sides = 8;
+            var peak = center + new Vector3((float)(random.NextDouble() - .5) * radius * .2f, height, (float)(random.NextDouble() - .5) * radius * .2f);
+            var ring = new Vector3[sides];
+            var snowLine = new Vector3[sides];
+            for (int i = 0; i < sides; i++)
+            {
+                float a = (i + (float)random.NextDouble() * .4f) * Mathf.PI * 2 / sides;
+                float r = radius * (.75f + (float)random.NextDouble() * .5f);
+                ring[i] = center + new Vector3(Mathf.Cos(a) * r, -1f, Mathf.Sin(a) * r);
+                snowLine[i] = Vector3.Lerp(ring[i], peak, .6f + (float)random.NextDouble() * .12f);
+            }
+            Color cap = snow ?? Color.Lerp(rock, White, .15f);
+            for (int i = 0; i < sides; i++)
+            {
+                int j = (i + 1) % sides;
+                var lower = new[] { ring[i], ring[j], snowLine[j], snowLine[i] };
+                var upper = new[] { snowLine[i], snowLine[j], peak };
+                g.Polygon(lower, Outward(lower, center), rock);
+                g.Polygon(upper, Outward(upper, center), cap);
+            }
+        }
+
+        /// <summary>A long, low line of hills facing the room, in the style of the window panels' landscape.</summary>
+        private static void Ridge(float z, float minHeight, float maxHeight, Color c, int seed)
+        {
+            var random = new System.Random(seed);
+            const int segments = 16;
+            float previous = minHeight;
+            for (int i = 0; i < segments; i++)
+            {
+                float x0 = Mathf.Lerp(-150, 150, (float)i / segments), x1 = Mathf.Lerp(-150, 150, (float)(i + 1) / segments);
+                float next = Mathf.Lerp(minHeight, maxHeight, (float)random.NextDouble());
+                g.Polygon(new[] { new Vector3(x0, -1, z), new Vector3(x1, -1, z), new Vector3(x1, next, z), new Vector3(x0, previous, z) }, Vector3.forward, c, true);
+                previous = next;
+            }
+        }
+
         private static void ConfigureMobile()
         {
             var asset=AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>("Assets/Settings/Mobile_RPAsset.asset");
@@ -323,17 +597,18 @@ namespace SortQuest.Editor
         private static Dictionary<string,string> Snapshot(Scene scene)
         {
             var result=new Dictionary<string,string>();
-            foreach(var go in scene.GetRootGameObjects())if(go.name!=RootName)
+            foreach(var go in scene.GetRootGameObjects())if(go.name!=RootName&&go.name!=BarrierName)
                 foreach(var c in go.GetComponentsInChildren<Component>(true))if(c!=null && !(c is Renderer))result[GlobalObjectId.GetGlobalObjectIdSlow(c).ToString()]=EditorJsonUtility.ToJson(c);
             return result;
         }
-        private static void Text(string value,Vector3 position,float width,float height,float size,Color color)
+        private static void Text(string value,Vector3 position,float width,float height,float size,Color color,Quaternion? rotation=null,bool center=false)
         {
             var go=new GameObject("Sign - "+value);go.transform.SetParent(root,false);go.transform.position=position;go.layer=2;
+            go.transform.rotation=rotation??Quaternion.identity;
             var text=go.AddComponent<TextMeshPro>();text.font=AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
-            text.text=value;text.fontSize=size;text.color=color;text.alignment=TextAlignmentOptions.Left;
-            if(value=="SORTQUEST")text.fontStyle=FontStyles.Bold;
-            text.rectTransform.pivot=new Vector2(0,.5f);text.rectTransform.sizeDelta=new Vector2(width,height);text.textWrappingMode=TextWrappingModes.NoWrap;
+            text.text=value;text.fontSize=size;text.color=color;text.alignment=center?TextAlignmentOptions.Center:TextAlignmentOptions.Left;
+            if(value=="SORTQUEST"||center)text.fontStyle=FontStyles.Bold;
+            text.rectTransform.pivot=new Vector2(center?.5f:0,.5f);text.rectTransform.sizeDelta=new Vector2(width,height);text.textWrappingMode=TextWrappingModes.NoWrap;
         }
         private static void Beam(Vector3 from,Vector3 to,float width,float depth,Color color)
             =>Box((from+to)*.5f,new Vector3(width,(to-from).magnitude,depth),color,.02f,false,Quaternion.FromToRotation(Vector3.up,to-from));
@@ -385,6 +660,11 @@ namespace SortQuest.Editor
             public void Leaf(Vector3 a,Vector3 b,Vector3 c,Vector3 d,Vector3 ridge,Color color)
             {
                 var ring=new[]{a,b,c,d};for(int i=0;i<4;i++){var next=ring[(i+1)%4];Polygon(new[]{ring[i],next,ridge},Vector3.up,color);Polygon(new[]{next,ring[i],ridge-Vector3.up*.035f},Vector3.down,color);}
+            }
+            public void WriteTo(Mesh mesh)
+            {
+                mesh.Clear();mesh.indexFormat=vertices.Count>65535?IndexFormat.UInt32:IndexFormat.UInt16;
+                mesh.SetVertices(vertices);mesh.SetColors(colors);mesh.SetTriangles(indices,0);mesh.RecalculateBounds();
             }
             public Mesh ToMesh(string name)
             {

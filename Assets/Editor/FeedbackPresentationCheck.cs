@@ -23,10 +23,22 @@ namespace SortQuest.Editor
             {
                 Invoke(feedback, "Start");
                 Require(go.GetComponentsInChildren<AudioSource>().Length == 8, "Expected eight pooled voices");
-                int bins = Object.FindObjectsByType<SortingBin>(FindObjectsSortMode.None).Length;
-                Require(Object.FindObjectsByType<ReadableSign>(FindObjectsSortMode.None).Length >= bins, "Bin signs missing");
+                foreach (var bin in Object.FindObjectsByType<SortingBin>(FindObjectsSortMode.None))
+                {
+                    var label = bin.GetComponentInChildren<TMP_Text>();
+                    Require(label != null, bin.name + " has no label");
+                    Vector3 local = bin.transform.InverseTransformPoint(label.transform.position);
+                    Require(label.GetComponent<Billboard>() == null && local.z < -.2f && local.y < .6f,
+                        bin.name + " label is not on the bin's front edge");
+                }
                 foreach (var sign in Object.FindObjectsByType<ReadableSign>(FindObjectsSortMode.None))
                     Require(sign.GetComponentsInChildren<Collider>().Length == 0, "Sign changed collision geometry");
+                var guide = go.GetComponentInChildren<TrashGuide>();
+                Require(guide != null, "Trash guide missing");
+                Invoke(guide, "Start");
+                Require(guide.ModelCount >= 6, "Trash guide shows too few models");
+                Require(guide.GetComponentsInChildren<Collider>().Length == 0, "Trash guide added collision geometry");
+                Require(guide.GetComponentsInChildren<TMP_Text>().Length == 12, "Trash guide text missing");
                 var clip = InteractionFeedback.Tone("Validation", .3f, 660, 990);
                 var data = new float[clip.samples];
                 clip.GetData(data, 0);
@@ -41,7 +53,6 @@ namespace SortQuest.Editor
                 var sampleObject = new GameObject("Temporary item", typeof(Rigidbody), typeof(TrashItem));
                 var item = sampleObject.GetComponent<TrashItem>();
                 typeof(InteractionFeedback).GetMethod("Track", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(feedback, new object[] { item });
-                Require(item.GetComponent<ItemNameTag>() != null, "Item tag missing");
                 foreach (string eventName in new[] { "Grabbed", "Released", "PickedByRobot", "Missed" })
                 {
                     var callback = (Action<TrashItem>)typeof(TrashItem).GetField(eventName, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(item);
@@ -60,7 +71,7 @@ namespace SortQuest.Editor
                 foreach (var arm in Object.FindObjectsByType<RobotArmDisplay>(FindObjectsSortMode.None)) { Invoke(arm, "Awake"); Invoke(arm, "LateUpdate"); }
                 var capture = typeof(SceneVisualPolish).GetMethod("Capture", BindingFlags.NonPublic | BindingFlags.Static);
                 capture.Invoke(null, new object[] { new Vector3(0, 1.85f, -3.45f), new Vector3(0, 1.35f, 1.6f), "sortquest-signs-preview.png" });
-                Debug.Log("FEEDBACK_PRESENTATION_PASS: bin cards, collider isolation, eight voices, finite unclipped mono cue with silent endpoints.");
+                Debug.Log("FEEDBACK_PRESENTATION_PASS: bin labels on bin fronts, trash guide models and text, collider isolation, eight voices, finite unclipped mono cue with silent endpoints.");
             }
             finally
             {

@@ -114,6 +114,24 @@ namespace SortQuest
             }
         }
 
+        /// <summary>Every prefab of this item type (its different looks), in spawner order.</summary>
+        public List<TrashItem> PrefabsOf(ItemType type)
+        {
+            var result = new List<TrashItem>();
+            if (itemPrefabs == null)
+            {
+                return result;
+            }
+            foreach (TrashItem prefab in itemPrefabs)
+            {
+                if (prefab != null && prefab.ItemType == type)
+                {
+                    result.Add(prefab);
+                }
+            }
+            return result;
+        }
+
         /// <summary>The first prefab of this item type, or null.</summary>
         public TrashItem GetPrefab(ItemType type)
         {

@@ -73,7 +73,7 @@ We haven't found another project that combines all of these:
 | 7 | Menu with grabbable choice blocks; four gripper types (three two-finger sizes and a suction cup) that learn separately; keep improving or return to the menu after Results | Done |
 | 8 | Collision-aware robot: full gripper body checked against the belt, bins, and other trash before and during each move; safe-height travel; arm link check; failure reasons and stages on robot records; feasibility notes for human grasps | Implemented; testing in progress |
 
-The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a sign listing what goes in it, and the item in the player's hand shows its name.
+The six starting items are an aluminum can, a plastic bottle, a cardboard box, crumpled paper, an AA battery, and a power bank. Each bin has a label on its front listing what goes in it, a trash guide board to the player's left shows every item under the bin it belongs in, and the item in the player's hand shows its name. Behind the player, a loading bay door stands open onto a yard with trees and mountains; a guardrail keeps players inside.
 
 ## Tech stack
 
