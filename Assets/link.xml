@@ -1,0 +1,7 @@
+<linker>
+  <!-- Grasp records are read and written by Newtonsoft through reflection (GraspJson).
+       Keep SortQuest types whole so a higher code stripping level can't drop their fields or constructors. -->
+  <assembly fullname="Assembly-CSharp">
+    <namespace fullname="SortQuest" preserve="all"/>
+  </assembly>
+</linker>

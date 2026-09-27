@@ -66,6 +66,7 @@ namespace SortQuest
         public int PendingGrasps => jobs.Count;
 
         private readonly Queue<Job> jobs = new Queue<Job>();
+        private readonly HashSet<string> queued = new HashSet<string>();
         private readonly Dictionary<ItemType, Sandbox> sandboxes = new Dictionary<ItemType, Sandbox>();
 
         private void Awake()
@@ -97,7 +98,7 @@ namespace SortQuest
             // Only practice new good human grasps (not our own output or the robot's attempts).
             if (record.source == GraspRecord.SourceHuman && record.IsGood && TryParseItemType(record.item_type, out ItemType type))
             {
-                jobs.Enqueue(new Job { Original = record, Type = type, Profile = GripperCatalog.CurrentOrStandard(catalog) });
+                Enqueue(record, type, GripperCatalog.CurrentOrStandard(catalog));
             }
         }
 
@@ -115,14 +116,10 @@ namespace SortQuest
             foreach (ItemType type in (ItemType[])Enum.GetValues(typeof(ItemType)))
             {
                 List<GraspRecord> good = dataset.GoodGrasps(type);
-                if (good.Exists(r => r.source == GraspRecord.SourceAugmented && r.gripper == profile.id))
-                {
-                    continue;
-                }
                 List<GraspRecord> human = good.FindAll(r => r.source == GraspRecord.SourceHuman);
                 for (int i = Mathf.Max(0, human.Count - backfillPerItem); i < human.Count; i++)
                 {
-                    jobs.Enqueue(new Job { Original = human[i], Type = type, Profile = profile });
+                    Enqueue(human[i], type, profile);
                     queued++;
                 }
             }
@@ -151,6 +148,9 @@ namespace SortQuest
                     job.Started = true;
                     job.HasBase = TryMakeBase(job, sandbox, out job.Base);
                     job.OriginalWorks = job.HasBase && Check(job.Profile, sandbox, job.Base, out _);
+                    var originalWorld = HandGripperPose.ToWorld(job.HasBase ? job.Base : job.Original.LocalGrasp, sandbox.Item);
+                    bool feasible = job.HasBase && GripperCollision.Feasible(job.Profile, originalWorld, sandbox.Body, null, out _, .02f);
+                    dataset.Annotate(job.Original, job.Profile, feasible);
                     if (!job.HasBase)
                     {
                         job.Tried = variationsPerGrasp; // Nothing to vary; finish below.
@@ -248,11 +248,18 @@ namespace SortQuest
         {
             width = 0f;
             GripperGrasp world = HandGripperPose.ToWorld(localGrasp, sandbox.Item);
-            if (profile.Model.PathBlocked(world, profile.approachDistance, null))
+            if (!GripperCollision.Feasible(profile, world, sandbox.Body, null, out _, .02f))
             {
                 return false;
             }
             return profile.Model.TryGrasp(world, sandbox.Body, out width);
+        }
+
+        private void Enqueue(GraspRecord record, ItemType type, GripperProfile profile)
+        {
+            string key = record.record_id + ":" + profile.id;
+            if (!dataset.HasAnnotation(record.record_id, profile.id) && queued.Add(key))
+                jobs.Enqueue(new Job { Original = record, Type = type, Profile = profile });
         }
 
         /// <summary>

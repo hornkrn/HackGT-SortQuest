@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace SortQuest
 {
@@ -37,20 +38,12 @@ namespace SortQuest
         /// <summary>Distance from the grasp point back to the top of the wrist, where an arm attaches.</summary>
         public float MountOffset => Profile.MountOffset;
 
-        private const float PadThickness = 0.004f;
-        private const float LinkThickness = 0.008f;
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-
         private GripperProfile Profile => robot != null ? robot.Profile : GripperCatalog.CurrentOrStandard(catalog);
-
         private Transform model;
         private GripperProfile builtFor;
-        private Transform leftCarriage;
-        private Transform rightCarriage;
-        private Transform leftLink;
-        private Transform rightLink;
-        private Transform leftPad;
-        private Transform rightPad;
+        private readonly List<GripperPart> parts = new List<GripperPart>();
+        private readonly List<Transform> visuals = new List<Transform>();
         private Renderer statusLight;
         private bool busy;
         private Color flashColor;
@@ -99,12 +92,16 @@ namespace SortQuest
         /// <summary>Moves the fingers; offsets are from the grasp point to each finger's inner face.</summary>
         public void Apply(float leftOffset, float rightOffset)
         {
-            if (leftLink == null)
-            {
-                return; // Suction cup: nothing moves.
-            }
-            PlaceFinger(leftCarriage, leftLink, leftPad, -1f, leftOffset);
-            PlaceFinger(rightCarriage, rightLink, rightPad, 1f, rightOffset);
+            parts.Clear();
+            Profile.Model.GetParts(parts, leftOffset, rightOffset);
+            for (int i = 0; i < parts.Count && i < visuals.Count; i++) Place(visuals[i], parts[i]);
+        }
+
+        private static void Place(Transform target, GripperPart part)
+        {
+            target.localPosition = part.Center;
+            target.localRotation = part.Cylinder ? Quaternion.Euler(90, 0, 0) : Quaternion.identity;
+            target.localScale = part.Cylinder ? new Vector3(part.Size.x, part.Size.z * .5f, part.Size.y) : part.Size;
         }
 
         private void Update()
@@ -127,81 +124,23 @@ namespace SortQuest
             {
                 Destroy(model.gameObject);
             }
-            leftCarriage = rightCarriage = leftLink = rightLink = leftPad = rightPad = null;
-
-            GripperProfile profile = Profile;
+            visuals.Clear();
+            var profile = Profile;
             builtFor = profile;
             model = new GameObject("GripperModel").transform;
             model.SetParent(transform, false);
-            if (profile.IsSuction)
+            parts.Clear();
+            profile.Model.GetParts(parts, profile.parallel.OpenOffset, profile.parallel.OpenOffset);
+            Material[] materials = { bodyMaterial, metalMaterial, padMaterial, accentMaterial, lightMaterial };
+            foreach (var part in parts)
             {
-                BuildSuction(profile);
+                var renderer = VizUtil.CreateShape(part.Name, model,
+                    part.Cylinder ? VizUtil.CylinderMesh : VizUtil.CubeMesh, materials[part.Material]);
+                Place(renderer.transform, part);
+                visuals.Add(renderer.transform);
+                if (part.Material == 3) Accent(renderer, profile);
+                if (part.Material == 4) statusLight = renderer;
             }
-            else
-            {
-                BuildParallel(profile);
-            }
-        }
-
-        private void BuildParallel(GripperProfile profile)
-        {
-            GripperShape shape = profile.parallel;
-            float tipZ = shape.fingertipPastGrasp;
-            float palmFrontZ = tipZ - shape.fingerLength;
-            float housingWidth = shape.maxOpening + 2f * shape.fingerThickness + 0.03f;
-
-            // Housing that the fingers slide along, with a rail across its face and an accent stripe on top.
-            Box("Housing", bodyMaterial, new Vector3(0f, 0f, palmFrontZ - 0.02f), new Vector3(housingWidth, 0.055f, 0.04f));
-            Box("Rail", metalMaterial, new Vector3(0f, 0f, palmFrontZ - 0.002f), new Vector3(housingWidth - 0.01f, 0.014f, 0.004f));
-            Accent(Box("Stripe", accentMaterial, new Vector3(0f, 0.0285f, palmFrontZ - 0.02f),
-                new Vector3(housingWidth + 0.002f, 0.003f, 0.02f)), profile);
-
-            // Flange, status light ring, and wrist; together they end at MountOffset behind the grasp point.
-            float flangeZ = palmFrontZ - 0.05f;
-            BuildWrist(profile, flangeZ);
-
-            leftCarriage = Box("LeftCarriage", bodyMaterial, Vector3.zero, new Vector3(0.024f, 0.04f, 0.02f)).transform;
-            rightCarriage = Box("RightCarriage", bodyMaterial, Vector3.zero, new Vector3(0.024f, 0.04f, 0.02f)).transform;
-            var linkSize = new Vector3(LinkThickness, shape.fingerWidth, shape.fingerLength);
-            leftLink = Box("LeftFinger", metalMaterial, Vector3.zero, linkSize).transform;
-            rightLink = Box("RightFinger", metalMaterial, Vector3.zero, linkSize).transform;
-            var padSize = new Vector3(PadThickness, shape.fingerWidth * 1.1f, shape.fingerLength * 0.55f);
-            leftPad = Box("LeftPad", padMaterial, Vector3.zero, padSize).transform;
-            rightPad = Box("RightPad", padMaterial, Vector3.zero, padSize).transform;
-            Apply(shape.OpenOffset, shape.OpenOffset);
-        }
-
-        private void BuildSuction(GripperProfile profile)
-        {
-            SuctionShape cup = profile.suction;
-            // Cup face at the grasp point (z = 0), rubber bellows, then a stem back to the flange and wrist.
-            Disc("Cup", padMaterial, -0.004f, cup.cupDiameter, 0.008f);
-            Disc("Bellows", padMaterial, -0.010f, cup.cupDiameter * 0.7f, 0.006f);
-            float stemTop = -(0.012f + cup.stemLength);
-            Disc("Stem", metalMaterial, (-0.012f + stemTop) * 0.5f, 0.024f, cup.stemLength);
-            Accent(Disc("StemBand", accentMaterial, -0.012f - cup.stemLength * 0.3f, 0.028f, 0.01f), profile);
-            BuildWrist(profile, stemTop - 0.01f);
-        }
-
-        /// <summary>Flange centered at flangeZ, status light, and wrist; the wrist top is 0.085 m behind flangeZ.</summary>
-        private void BuildWrist(GripperProfile profile, float flangeZ)
-        {
-            Disc("Flange", metalMaterial, flangeZ, 0.075f, 0.02f);
-            statusLight = Disc("StatusLight", lightMaterial, flangeZ - 0.012f, 0.08f, 0.004f);
-            VizUtil.SetColor(statusLight, idleColor);
-            Disc("Wrist", bodyMaterial, flangeZ - 0.05f, 0.05f, 0.07f);
-            Accent(Disc("WristRing", accentMaterial, flangeZ - 0.05f, 0.054f, 0.006f), profile);
-        }
-
-        /// <summary>Pad on the inner face, aluminum link behind it; together they fill the finger's check box.</summary>
-        private void PlaceFinger(Transform carriage, Transform link, Transform pad, float side, float offset)
-        {
-            GripperShape shape = builtFor.parallel;
-            float tipZ = shape.fingertipPastGrasp;
-            pad.localPosition = new Vector3(side * (offset + PadThickness * 0.5f), 0f, tipZ - shape.fingerLength * 0.3f);
-            link.localPosition = new Vector3(side * (offset + PadThickness + LinkThickness * 0.5f), 0f, tipZ - shape.fingerLength * 0.5f);
-            carriage.localPosition = new Vector3(side * (offset + PadThickness + LinkThickness * 0.5f), 0f,
-                tipZ - shape.fingerLength + 0.006f);
         }
 
         private static void Accent(Renderer part, GripperProfile profile)
@@ -212,21 +151,5 @@ namespace SortQuest
             part.SetPropertyBlock(block);
         }
 
-        private MeshRenderer Box(string partName, Material material, Vector3 position, Vector3 size)
-        {
-            MeshRenderer part = VizUtil.CreateShape(partName, model, VizUtil.CubeMesh, material);
-            part.transform.localPosition = position;
-            part.transform.localScale = size;
-            return part;
-        }
-
-        private MeshRenderer Disc(string partName, Material material, float z, float diameter, float length)
-        {
-            MeshRenderer part = VizUtil.CreateShape(partName, model, VizUtil.CylinderMesh, material);
-            part.transform.localPosition = new Vector3(0f, 0f, z);
-            part.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            part.transform.localScale = new Vector3(diameter, length * 0.5f, diameter);
-            return part;
-        }
     }
 }

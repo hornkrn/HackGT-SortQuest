@@ -129,6 +129,7 @@ namespace SortQuest
             string handName = hand.Handedness == Handedness.Left ? "left" : "right";
             GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceHuman, item, local, handName,
                 GripperCatalog.CurrentOrStandard(catalog).id, DetectInputDevice());
+            record.hand_penetration = HandPenetration(hand, item);
             ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
             if (image != null)
             {
@@ -144,6 +145,33 @@ namespace SortQuest
             {
                 record.outcome.hold_s = GraspMath.Round(item.HoldSeconds, 2);
             }
+        }
+
+        private static readonly HandJointId[] QualityJoints = {
+            HandJointId.HandThumbTip, HandJointId.HandIndexTip, HandJointId.HandMiddleTip,
+            HandJointId.HandRingTip, HandJointId.HandPinkyTip, HandJointId.HandWristRoot, HandJointId.HandMiddle1
+        };
+        private static readonly Collider[] QualityHits = new Collider[64];
+
+        private static bool? HandPenetration(IHand hand, TrashItem target)
+        {
+            bool complete = true;
+            foreach (var joint in QualityJoints)
+            {
+                if (!hand.GetJointPose(joint, out Pose pose)) { complete = false; continue; }
+                int count = Physics.OverlapSphereNonAlloc(pose.position, .003f, QualityHits,
+                    Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+                if (count == QualityHits.Length) complete = false;
+                for (int i = 0; i < count; i++)
+                {
+                    var hit = QualityHits[i];
+                    if (hit.attachedRigidbody == target.Body) continue;
+                    bool relevant = hit.GetComponentInParent<ConveyorBelt>() != null ||
+                        hit.GetComponentInParent<SortingBin>() != null || hit.GetComponentInParent<TrashItem>() != null;
+                    if (relevant && (hit.ClosestPoint(pose.position) - pose.position).sqrMagnitude < 1e-8f) return true;
+                }
+            }
+            return complete ? false : (bool?)null;
         }
 
         private void HandleSorted(TrashItem item, SortingBin bin, bool correct)

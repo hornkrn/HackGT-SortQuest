@@ -23,6 +23,14 @@ namespace SortQuest
             public TrashItem Item;
             public GraspChoice Choice;
             public bool Success;
+
+            /// <summary>
+            /// False for attempts that ended for reasons outside the robot's control (a person took the item, it
+            /// rode off the belt, or the round ended). Those are saved as data but not scored.
+            /// </summary>
+            public bool Counts;
+
+            public string FailureReason;
         }
 
         [Header("References (found automatically if empty)")]
@@ -68,6 +76,9 @@ namespace SortQuest
         [SerializeField] private float carryHeight = 1.25f;
         [SerializeField] private float releaseHeight = 0.85f;
 
+        [Tooltip("If the gripper doesn't fit at the release height, it tries this much higher (twice) before failing.")]
+        [SerializeField] private float releaseRaiseStep = 0.15f;
+
         [Tooltip("Give up on a move after this many seconds.")]
         [SerializeField] private float stepTimeout = 4f;
 
@@ -98,6 +109,14 @@ namespace SortQuest
         public GripperShape Shape => Profile.parallel;
         public float ApproachDistance => Profile.approachDistance;
 
+        [Header("Query-only collision checks")]
+        [SerializeField] private LayerMask collisionMask = Physics.DefaultRaycastLayers;
+        [SerializeField] private bool drawCollisionShapes = true;
+        private string motionFailure;
+        private GraspRecord pendingRecord;
+        private GraspChoice pendingChoice;
+        private TrashItem pendingItem;
+        private List<GripperCollision.PayloadPart> payload;
         private Rigidbody body;
         private Vector3 homePosition;
         private Quaternion homeRotation;
@@ -114,6 +133,7 @@ namespace SortQuest
 
         private void Awake()
         {
+            GripperCollision.Mask = collisionMask;
             body = GetComponent<Rigidbody>();
             body.isKinematic = true;
             body.useGravity = false;
@@ -174,7 +194,9 @@ namespace SortQuest
             {
                 return;
             }
+            FinishAttempt(false, "aborted", pendingRecord?.outcome.stage ?? "plan");
             StopAllCoroutines();
+            payload = null;
             if (heldJoint != null)
             {
                 Destroy(heldJoint);
@@ -218,7 +240,10 @@ namespace SortQuest
                 TrashItem target = Active ? FindTarget() : null;
                 if (target == null)
                 {
-                    MoveToward(homePosition, homeRotation);
+                    motionFailure = null;
+                    if (Vector3.Distance(body.position, homePosition) > .005f)
+                        yield return MoveViaSafeHeight(homePosition, homeRotation);
+                    else MoveToward(homePosition, homeRotation);
                     yield return waitForFixedUpdate;
                     continue;
                 }
@@ -253,172 +278,162 @@ namespace SortQuest
         private IEnumerator TrySort(TrashItem item)
         {
             attempted.Add(item);
-            GripperProfile profile = Profile;
-            float lineUpDistance = profile.approachDistance;
-            GraspChoice choice = policy.ChooseGrasp(item);
+            var profile = Profile;
+            GraspChoice choice = default;
+            bool chosen = false;
+            yield return policy.ChooseGraspAsync(item, c => { choice = c; chosen = true; });
+            if (!chosen || !IsOnBelt(item)) yield break;
+            pendingChoice = choice;
+            pendingItem = item;
+            pendingRecord = GraspRecord.Create(dataset, GraspRecord.SourceRobot, item, choice.LocalGrasp,
+                "gripper", profile.id, GraspRecord.InputNone);
+            pendingRecord.checker_version = GripperCollision.Version;
+            pendingRecord.parent_record_id = choice.ParentRecordId;
+            pendingRecord.outcome.stage = "plan";
+            if (robotCamera != null) pendingRecord.image = robotCamera.Capture(item);
             GraspPlanned?.Invoke(item, choice);
-            ImageData image = robotCamera != null ? robotCamera.Capture(item) : null;
+            motionFailure = null;
             OpenFingers();
 
-            // A real arm this size couldn't put the gripper there, so it's a miss without moving.
-            GripperGrasp planned = WorldGrasp(choice, item);
-            GripperGrasp lineUp = planned;
-            lineUp.Position -= planned.Approach * lineUpDistance;
+            var planned = WorldGrasp(choice, item);
+            var lineUp = planned;
+            lineUp.Position -= planned.Approach * profile.approachDistance;
+            bool feasible = GripperCollision.Feasible(profile, planned, item.Body, body, out string rejection);
+            pendingRecord.feasible = feasible;
+            if (!feasible) { FinishAttempt(false, rejection, "plan"); yield break; }
+            // Arm reach is separate from the gripper's own feasibility label.
             if (arm != null && (!arm.CanReach(planned) || !arm.CanReach(lineUp)))
-            {
-                Record(item, choice, false, "out of the arm's reach", image, profile, choice.LocalGrasp.Width);
-                yield break;
-            }
+            { FinishAttempt(false, "out_of_reach", "plan"); yield break; }
+            // The arm's links must not pass through the belt or bins at the poses it would hold.
+            // Arm-specific, so it's labeled separately and never changes the grasp's own feasibility label.
+            if (arm != null && (!arm.LinksClear(planned) || !arm.LinksClear(lineUp)))
+            { FinishAttempt(false, "arm_collision", "plan"); yield break; }
 
-            // 1. Line up in front of the grasp, then 2. move in along the approach direction.
-            //    Both follow the item as it rides the belt.
+            yield return MoveViaSafeHeight(lineUp.Position, lineUp.Rotation);
+            if (motionFailure != null) { FinishAttempt(false, motionFailure, "approach"); yield break; }
+            pendingRecord.outcome.stage = "approach";
             for (int phase = 0; phase < 2; phase++)
             {
+                // The belt kept moving while the gripper traveled: recheck the grasp once before the final approach.
+                // (The per-step motion guard in MoveToward covers the rest of the approach.)
+                if (phase == 1 && IsOnBelt(item) &&
+                    !GripperCollision.Feasible(profile, WorldGrasp(choice, item), item.Body, body, out rejection))
+                { FinishAttempt(false, rejection, "approach"); yield break; }
                 float start = Time.time;
                 while (true)
                 {
                     if (!IsOnBelt(item) || Time.time - start > stepTimeout)
-                    {
-                        yield break; // A person took it or it fell off; not counted as an attempt.
-                    }
-                    GripperGrasp target = WorldGrasp(choice, item);
-                    Vector3 position = phase == 0 ? target.Position - target.Approach * lineUpDistance : target.Position;
-                    if (MoveToward(position, target.Rotation))
-                    {
-                        break;
-                    }
+                    { FinishAttempt(false, "aborted", "approach"); yield break; }
+                    var target = WorldGrasp(choice, item);
+                    if (phase == 0) target.Position -= target.Approach * profile.approachDistance;
+                    bool reached = MoveToward(target.Position, target.Rotation, phase == 1 ? item.Body : null, true);
+                    if (motionFailure != null) { FinishAttempt(false, motionFailure, "approach"); yield break; }
                     yield return waitForFixedUpdate;
+                    if (reached) break;
                 }
             }
 
-            // 3. The gripper must not run into the item or anything else on the way in. Then grasp.
-            GripperGrasp grasp = WorldGrasp(choice, item);
-            bool blocked = profile.Model.PathBlocked(grasp, lineUpDistance, body);
-            bool success;
-            string missReason;
-            float heldWidth;
-            if (profile.IsSuction)
-            {
-                // Press the cup on for a moment, following the belt, then check the seal.
-                if (!blocked)
-                {
-                    yield return waitForFixedUpdate;
-                    if (!IsOnBelt(item))
-                    {
-                        yield break;
-                    }
-                    grasp = WorldGrasp(choice, item);
-                    MoveToward(grasp.Position, grasp.Rotation);
-                }
-                success = !blocked && profile.suction.TrySeal(grasp, item.Body);
-                missReason = blocked ? "cup hit something on the way in" : "no seal (surface too curved, small, or tilted)";
-                heldWidth = profile.suction.cupDiameter;
-            }
+            pendingRecord.outcome.stage = "grasp";
+            bool success = false;
+            var grasp = WorldGrasp(choice, item);
+            float heldWidth = profile.IsSuction ? profile.suction.cupDiameter : 0;
+            if (profile.IsSuction) success = profile.suction.TrySeal(grasp, item.Body);
             else
             {
-                GripperShape fingers = profile.parallel;
-                bool leftTouch = false;
-                bool rightTouch = false;
-                if (!blocked)
+                bool leftTouch = false, rightTouch = false;
+                while (!(leftTouch && rightTouch) && (leftOffset > 0 || rightOffset > 0))
                 {
-                    while (!(leftTouch && rightTouch) && (leftOffset > 0f || rightOffset > 0f))
-                    {
-                        if (!IsOnBelt(item))
-                        {
-                            OpenFingers();
-                            yield break;
-                        }
-                        grasp = WorldGrasp(choice, item);
-                        MoveToward(grasp.Position, grasp.Rotation);
-                        leftTouch = leftTouch || fingers.FingerTouches(grasp, true, leftOffset, item.Body);
-                        rightTouch = rightTouch || fingers.FingerTouches(grasp, false, rightOffset, item.Body);
-                        float step = closeSpeed * Time.fixedDeltaTime;
-                        if (!leftTouch) leftOffset = Mathf.Max(0f, leftOffset - step);
-                        if (!rightTouch) rightOffset = Mathf.Max(0f, rightOffset - step);
-                        yield return waitForFixedUpdate;
-                    }
+                    if (!IsOnBelt(item)) { FinishAttempt(false, "aborted", "grasp"); yield break; }
+                    grasp = WorldGrasp(choice, item);
+                    MoveToward(grasp.Position, grasp.Rotation, item.Body);
+                    if (motionFailure != null) { FinishAttempt(false, motionFailure, "grasp"); yield break; }
+                    leftTouch = profile.parallel.FingerTouches(grasp, true, leftOffset, item.Body);
+                    rightTouch = profile.parallel.FingerTouches(grasp, false, rightOffset, item.Body);
+                    float left = leftTouch ? leftOffset : Mathf.Max(0, leftOffset - closeSpeed * Time.fixedDeltaTime);
+                    float right = rightTouch ? rightOffset : Mathf.Max(0, rightOffset - closeSpeed * Time.fixedDeltaTime);
+                    if (GripperCollision.BodyOverlaps(profile.Model, grasp, left * 2, body, item.Body, right))
+                    { FinishAttempt(false, "collision_at_grasp", "grasp"); yield break; }
+                    leftOffset = left; rightOffset = right;
+                    yield return waitForFixedUpdate;
                 }
-                success = !blocked && leftTouch && rightTouch;
-                missReason = blocked ? "fingers hit something" : "fingers didn't both touch";
+                success = leftTouch && rightTouch;
                 heldWidth = leftOffset + rightOffset;
             }
-
-            Record(item, choice, success, missReason, image, profile, heldWidth);
-            if (!success)
-            {
-                OpenFingers();
-                yield return StartCoroutine(MoveTo(body.position - grasp.Approach * lineUpDistance, body.rotation));
-                yield break;
-            }
-
-            // 4. Hold the item with a joint and carry it to its bin.
+            pendingRecord.outcome.grasp_success = success;
+            if (!success) { FinishAttempt(false, profile.IsSuction ? "no_seal" : "no_contact", "grasp"); yield break; }
+            pendingRecord.grasp.width_m = GraspMath.Round(heldWidth);
+            pendingRecord.outcome.stage = "carry";
+            // Capture the object's collider envelopes in the gripper frame before the joint moves it.
+            payload = GripperCollision.CapturePayload(item.Body, CurrentPose);
             item.BeginRobotHold();
-            FixedJoint joint = item.gameObject.AddComponent<FixedJoint>();
-            joint.connectedBody = body;
             heldItem = item;
-            heldJoint = joint;
+            heldJoint = item.gameObject.AddComponent<FixedJoint>();
+            heldJoint.connectedBody = body;
 
-            yield return StartCoroutine(MoveTo(new Vector3(body.position.x, carryHeight, body.position.z), body.rotation));
-            SortingBin bin = FindBin(item.CorrectBin);
-            if (bin != null)
+            // Withdraw along the approach, then lift vertically, then cross above the belt.
+            var retreat = body.position - grasp.Approach * profile.approachDistance;
+            yield return MoveTo(retreat, body.rotation);
+            if (motionFailure == null)
             {
-                Vector3 above = bin.transform.position;
-                yield return StartCoroutine(MoveTo(new Vector3(above.x, carryHeight, above.z), body.rotation));
-                yield return StartCoroutine(MoveTo(new Vector3(above.x, releaseHeight, above.z), body.rotation));
+                var bin = FindBin(item.CorrectBin);
+                if (bin == null) motionFailure = "aborted";
+                else
+                {
+                    // Release as low over the bin as the gripper fits. Held sideways, its housing can reach over
+                    // the belt beside the bin, so try a little higher before giving up.
+                    var above = bin.transform.position;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        motionFailure = null;
+                        float height = releaseHeight + i * releaseRaiseStep;
+                        yield return MoveViaSafeHeight(new Vector3(above.x, height, above.z), body.rotation);
+                        if (motionFailure != "path_blocked") break;
+                    }
+                }
             }
-
-            // 5. Let go over the bin.
-            if (joint != null)
-            {
-                Destroy(joint);
-            }
-            if (item != null)
-            {
-                item.EndRobotHold();
-            }
-            heldItem = null;
-            heldJoint = null;
-            OpenFingers();
-            yield return new WaitForSeconds(0.3f);
+            if (motionFailure != null) { FinishAttempt(false, motionFailure, "carry"); yield break; }
+            FinishAttempt(true, "none", "release");
+            yield return new WaitForSeconds(.3f);
         }
 
-        private void Record(TrashItem item, GraspChoice choice, bool success, string missReason, ImageData image,
-            GripperProfile profile, float heldWidth)
+        private void ReleasePayload()
         {
-            Attempts++;
-            if (success)
-            {
-                Successes++;
-            }
+            if (heldJoint != null) Destroy(heldJoint);
+            if (heldItem != null) heldItem.EndRobotHold();
+            heldItem = null; heldJoint = null; payload = null;
+        }
 
-            string how = choice.FromData
-                ? $"learned grasp ({choice.Support} of {choice.GoodCount} agree, {choice.Confidence * 100f:F0}% sure)"
-                : "no data, random guess";
-            string result = success ? "success" : $"missed ({missReason})";
-            if (visual != null)
+        private void FinishAttempt(bool completed, string reason, string stage)
+        {
+            if (pendingRecord == null) return;
+            var record = pendingRecord;
+            pendingRecord = null; // Event handlers may reset the robot; finish exactly once.
+            record.outcome.failure_reason = reason;
+            record.outcome.stage = stage;
+            record.outcome.motion_success = completed;
+            record.outcome.correct = completed;
+            record.outcome.bin = completed ? record.correct_bin : GraspRecord.NoBin;
+            bool counts = reason != "aborted";
+            if (counts)
             {
-                visual.Flash(success);
+                Attempts++;
+                if (completed) Successes++;
             }
-            lastResult = $"{TrashTypes.DisplayName(item.ItemType)}: {how}, {result}";
-            Debug.Log($"[SortQuest] Robot {lastResult}. Accuracy {Successes}/{Attempts}");
+            string detail = reason.StartsWith("collision") || reason == "path_blocked" ? ": " + GripperCollision.LastObstacle
+                : reason == "arm_collision" && arm != null ? ": " + arm.LastObstacle : "";
+            lastResult = completed ? "Grasped and released over the bin" : stage + " rejected: " + reason + detail;
+            if (!pendingChoice.FromData) lastResult += " (random guess)";
+            else if (pendingChoice.Rank > 1) lastResult += $" (grasp #{pendingChoice.Rank}: better-agreed ones collide here)";
+            Debug.Log("[SortQuest] Robot " + lastResult);
+            if (visual != null) visual.Flash(completed);
+            ReleasePayload();
+            OpenFingers();
             UpdateStatus();
-
-            if (dataset != null)
+            if (dataset != null) dataset.Add(record);
+            AttemptFinished?.Invoke(new Attempt
             {
-                GripperGrasp actual = choice.LocalGrasp;
-                actual.Width = success ? heldWidth : choice.LocalGrasp.Width;
-                GraspRecord record = GraspRecord.Create(dataset, GraspRecord.SourceRobot, item, actual, "gripper",
-                    profile.id, GraspRecord.InputNone);
-                record.outcome.bin = success ? TrashTypes.BinId(item.CorrectBin) : GraspRecord.NoBin;
-                record.outcome.correct = success;
-                if (image != null)
-                {
-                    record.image = image;
-                }
-                dataset.Add(record);
-            }
-
-            AttemptFinished?.Invoke(new Attempt { Item = item, Choice = choice, Success = success });
+                Item = pendingItem, Choice = pendingChoice, Success = completed, Counts = counts, FailureReason = reason
+            });
         }
 
         private void UpdateStatus()
@@ -433,25 +448,87 @@ namespace SortQuest
 
         // ---------- Motion ----------
 
-        /// <summary>Moves one physics step toward a pose. Returns true once the pose is reached.</summary>
-        private bool MoveToward(Vector3 position, Quaternion rotation)
+        private GripperGrasp CurrentPose => new GripperGrasp { Position = body.position, Rotation = body.rotation };
+        private float SafeHeight => Mathf.Max(carryHeight, belt.StartPosition.y + .25f, body.position.y);
+
+        private bool SegmentBlocked(GripperGrasp from, GripperGrasp to, Rigidbody contact = null, bool endpointOnly = false)
         {
-            float dt = Time.fixedDeltaTime;
-            Vector3 nextPosition = Vector3.MoveTowards(body.position, position, moveSpeed * dt);
-            Quaternion nextRotation = Quaternion.RotateTowards(body.rotation, rotation, turnSpeed * dt);
-            body.MovePosition(nextPosition);
-            body.MoveRotation(nextRotation);
-            return (nextPosition - position).sqrMagnitude < 1e-6f && Quaternion.Angle(nextRotation, rotation) < 0.5f;
+            float distance = Vector3.Distance(from.Position, to.Position) +
+                Quaternion.Angle(from.Rotation, to.Rotation) * Mathf.Deg2Rad * (Profile.MountOffset + .15f);
+            int steps = Mathf.Max(1, Mathf.CeilToInt(distance / .01f));
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = (float)i / steps;
+                var pose = new GripperGrasp { Position = Vector3.Lerp(from.Position, to.Position, t),
+                    Rotation = Quaternion.Slerp(from.Rotation, to.Rotation, t) };
+                var allowed = endpointOnly && i != steps ? null : contact;
+                if (GripperCollision.BodyOverlaps(Profile.Model, pose, leftOffset * 2, body, allowed, rightOffset,
+                    heldItem != null ? heldItem.Body : null) ||
+                    GripperCollision.PayloadOverlaps(payload, pose, heldItem != null ? heldItem.Body : null, body)) return true;
+            }
+            return false;
+        }
+
+        private bool MoveToward(Vector3 position, Quaternion rotation, Rigidbody contact = null, bool endpointOnly = false)
+        {
+            var next = new GripperGrasp {
+                Position = Vector3.MoveTowards(body.position, position, moveSpeed * Time.fixedDeltaTime),
+                Rotation = Quaternion.RotateTowards(body.rotation, rotation, turnSpeed * Time.fixedDeltaTime) };
+            bool reached = Vector3.Distance(next.Position, position) < .001f && Quaternion.Angle(next.Rotation, rotation) < .5f;
+            if (SegmentBlocked(CurrentPose, next, endpointOnly && !reached ? null : contact, endpointOnly))
+            { motionFailure = "collision_during_motion"; return false; }
+            body.MovePosition(next.Position);
+            body.MoveRotation(next.Rotation);
+            return reached;
         }
 
         private IEnumerator MoveTo(Vector3 position, Quaternion rotation)
         {
+            var target = new GripperGrasp { Position = position, Rotation = rotation };
+            if (SegmentBlocked(CurrentPose, target)) { motionFailure = "path_blocked"; yield break; }
             float start = Time.time;
-            while (!MoveToward(position, rotation) && Time.time - start < stepTimeout)
+            while (motionFailure == null)
             {
+                bool reached = MoveToward(position, rotation);
                 yield return waitForFixedUpdate;
+                if (reached) yield break;
+                if (Time.time - start > stepTimeout) { motionFailure = "aborted"; yield break; }
             }
-            yield return waitForFixedUpdate;
+        }
+
+        private IEnumerator MoveViaSafeHeight(Vector3 position, Quaternion rotation)
+        {
+            GripperGrasp[] route = null;
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                float height = SafeHeight + attempt * .25f;
+                var candidate = new[] {
+                    new GripperGrasp { Position = new Vector3(body.position.x, height, body.position.z), Rotation = body.rotation },
+                    new GripperGrasp { Position = new Vector3(position.x, height, position.z), Rotation = rotation },
+                    new GripperGrasp { Position = position, Rotation = rotation } };
+                var from = CurrentPose;
+                bool blocked = false;
+                foreach (var to in candidate) { if (SegmentBlocked(from, to)) { blocked = true; break; } from = to; }
+                if (!blocked) { route = candidate; break; }
+            }
+            if (route == null) { motionFailure = "path_blocked"; yield break; }
+            foreach (var to in route)
+            {
+                yield return MoveTo(to.Position, to.Rotation);
+                if (motionFailure != null) yield break;
+            }
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            if (!drawCollisionShapes) return;
+            var parts = new List<GripperPart>();
+            Profile.Model.GetParts(parts, Application.isPlaying ? leftOffset : Profile.parallel.OpenOffset,
+                Application.isPlaying ? rightOffset : Profile.parallel.OpenOffset);
+            var previous = Gizmos.matrix;
+            Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, Vector3.one);
+            foreach (var part in parts) { Gizmos.color = part.Contact ? Color.green : Color.cyan; Gizmos.DrawWireCube(part.Center, part.Size); }
+            Gizmos.matrix = previous;
         }
 
         private GripperGrasp WorldGrasp(GraspChoice choice, TrashItem item)
@@ -480,6 +557,8 @@ namespace SortQuest
 
         private void OpenFingers()
         {
+            if (body != null && GripperCollision.BodyOverlaps(Profile.Model, CurrentPose,
+                Profile.parallel.maxOpening, body)) return;
             leftOffset = Profile.parallel.OpenOffset;
             rightOffset = Profile.parallel.OpenOffset;
         }

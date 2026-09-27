@@ -17,6 +17,9 @@ namespace SortQuest
     {
         /// <summary>Distance from the grasp point back to the top of the wrist, where the arm attaches.</summary>
         float MountOffset { get; }
+        void GetParts(System.Collections.Generic.List<GripperPart> parts, float leftOffset, float rightOffset);
+        bool BodyOverlaps(GripperGrasp pose, float opening, Rigidbody ignore);
+        bool SweepBlocked(GripperGrasp fromPose, GripperGrasp toPose, float opening, Rigidbody ignore, float stepMeters);
 
         /// <summary>True if the gripper would pass through anything solid while moving in to the grasp.</summary>
         bool PathBlocked(GripperGrasp grasp, float approachDistance, Rigidbody ignore);

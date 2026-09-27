@@ -23,12 +23,24 @@ namespace SortQuest
 
         /// <summary>How many of those came straight from people (the rest were practiced variations).</summary>
         public int HumanCount;
+
+        /// <summary>
+        /// 1 when the robot uses its most agreed grasp. Higher when better-agreed grasps would have collided with
+        /// the belt or other items at the item's current pose, so a lower-ranked one was used. 0 when guessing.
+        /// </summary>
+        public int Rank;
+
+        /// <summary>The record_id of the learned grasp that was chosen, or null for a guess.</summary>
+        public string ParentRecordId;
     }
 
     /// <summary>
     /// Chooses the robot's grasp for the selected gripper. With no data it guesses a random grasp on the item's
     /// bounds. With data it uses the medoid: the successful grasp with the most other successful grasps nearby.
     /// Grasps are never averaged, since the average of two good grasps can be a grasp on empty air.
+    ///
+    /// Before each attempt, grasps are collision-checked at the item's current pose, best agreed first, and the
+    /// first one that fits is used. Random guesses are collision-checked the same way.
     ///
     /// Two-finger grippers learn from good human grasps plus variations practiced for that gripper.
     /// The suction cup learns only from practiced variations, because a pinch has to be converted to a
@@ -59,6 +71,13 @@ namespace SortQuest
         [Tooltip("Random guesses tilt the gripper by up to this many degrees around its approach direction.")]
         [SerializeField] private float randomRollRange = 30f;
 
+        [Tooltip("Before each attempt, at most this many learned grasps are collision-checked, best agreed first.")]
+        [SerializeField] private int maxFeasibilityChecks = 24;
+
+        [Tooltip("With no data, up to this many random guesses are collision-checked and the first that fits is used. " +
+                 "1 = always use the first guess.")]
+        [SerializeField, Min(1)] private int randomGuessTries = 6;
+
         private static readonly Vector3[] LocalAxes =
         {
             Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back
@@ -82,6 +101,53 @@ namespace SortQuest
             return new GraspChoice { LocalGrasp = RandomGrasp(item, profile), FromData = false };
         }
 
+        /// <summary>
+        /// Like ChooseGrasp, but uses the best-agreed grasp that the gripper can reach without hitting the belt or
+        /// other items at the item's current pose. Checks run best agreed first, two per frame, and stop at the first
+        /// grasp that fits, so a large dataset doesn't delay the robot. If none of the checked grasps fit, the most
+        /// agreed one is used anyway and the robot's own plan check records why it can't be done.
+        /// Calls done only if the item is still on the belt.
+        /// </summary>
+        public System.Collections.IEnumerator ChooseGraspAsync(TrashItem item, System.Action<GraspChoice> done)
+        {
+            GripperProfile profile = Profile;
+            List<GraspRecord> candidates = LearningGrasps(item.ItemType, profile);
+            List<int> ranking = RankByAgreement(candidates, profile, out int[] support);
+            if (ranking.Count == 0)
+            {
+                // No data yet: guess, but skip guesses that would drive the gripper into the belt or other items.
+                GripperGrasp guess = default;
+                for (int tries = 0; tries < Mathf.Max(1, randomGuessTries); tries++)
+                {
+                    if (item == null || item.State != TrashItemState.OnBelt) yield break;
+                    guess = RandomGrasp(item, profile);
+                    GripperGrasp guessWorld = HandGripperPose.ToWorld(guess, item.transform);
+                    if (GripperCollision.Feasible(profile, guessWorld, item.Body, null, out _)) break;
+                    if (tries % 2 == 1) yield return null;
+                }
+                if (item == null || item.State != TrashItemState.OnBelt) yield break;
+                done(new GraspChoice { LocalGrasp = guess, FromData = false });
+                yield break;
+            }
+
+            int chosen = 0;
+            int checks = Mathf.Min(ranking.Count, Mathf.Max(1, maxFeasibilityChecks));
+            for (int rank = 0; rank < checks; rank++)
+            {
+                if (item == null || item.State != TrashItemState.OnBelt) yield break;
+                GripperGrasp world = HandGripperPose.ToWorld(candidates[ranking[rank]].LocalGrasp, item.transform);
+                if (GripperCollision.Feasible(profile, world, item.Body, null, out _))
+                {
+                    chosen = rank;
+                    break;
+                }
+                if (rank % 2 == 1) yield return null;
+            }
+            if (item == null || item.State != TrashItemState.OnBelt) yield break;
+            int index = ranking[chosen];
+            done(LearnedChoice(candidates, index, support[index], chosen + 1));
+        }
+
         /// <summary>The medoid of the successful grasps for an item type and the selected gripper.</summary>
         public bool TryGetLearnedGrasp(ItemType itemType, out GraspChoice choice)
         {
@@ -90,55 +156,74 @@ namespace SortQuest
 
         public bool TryGetLearnedGrasp(ItemType itemType, GripperProfile profile, out GraspChoice choice)
         {
+            return SelectMedoid(LearningGrasps(itemType, profile), profile, out choice);
+        }
+
+        private bool SelectMedoid(List<GraspRecord> candidates, GripperProfile profile, out GraspChoice choice)
+        {
             choice = default;
-            List<GraspRecord> candidates = LearningGrasps(itemType, profile);
-            if (candidates.Count == 0)
+            List<int> ranking = RankByAgreement(candidates, profile, out int[] support);
+            if (ranking.Count == 0)
             {
                 return false;
             }
+            choice = LearnedChoice(candidates, ranking[0], support[ranking[0]], 1);
+            return true;
+        }
 
-            int humanCount = 0;
+        /// <summary>
+        /// Candidate indices ordered by how many grasps agree with each one (the medoid first).
+        /// Ties go to the tighter cluster.
+        /// </summary>
+        private List<int> RankByAgreement(List<GraspRecord> candidates, GripperProfile profile, out int[] support)
+        {
             var grasps = new List<GripperGrasp>(candidates.Count);
             foreach (GraspRecord record in candidates)
             {
                 grasps.Add(record.LocalGrasp);
-                if (record.source == GraspRecord.SourceHuman) humanCount++;
             }
 
-            // Medoid: the grasp with the most agreeing grasps. Ties go to the tighter cluster.
-            int bestIndex = 0;
-            int bestSupport = 0;
-            float bestSpread = float.MaxValue;
+            support = new int[grasps.Count];
+            var spread = new float[grasps.Count];
+            var ranking = new List<int>(grasps.Count);
             for (int i = 0; i < grasps.Count; i++)
             {
-                int support = 0;
-                float spread = 0f;
                 for (int j = 0; j < grasps.Count; j++)
                 {
                     if (Agree(grasps[i], grasps[j], profile))
                     {
-                        support++;
-                        spread += Vector3.Distance(grasps[i].Position, grasps[j].Position);
+                        support[i]++;
+                        spread[i] += Vector3.Distance(grasps[i].Position, grasps[j].Position);
                     }
                 }
-                if (support > bestSupport || (support == bestSupport && spread < bestSpread))
-                {
-                    bestIndex = i;
-                    bestSupport = support;
-                    bestSpread = spread;
-                }
+                ranking.Add(i);
             }
 
-            choice = new GraspChoice
+            int[] supportCopy = support;
+            ranking.Sort((a, b) => supportCopy[a] != supportCopy[b]
+                ? supportCopy[b].CompareTo(supportCopy[a])
+                : spread[a] != spread[b] ? spread[a].CompareTo(spread[b]) : a.CompareTo(b));
+            return ranking;
+        }
+
+        private static GraspChoice LearnedChoice(List<GraspRecord> candidates, int index, int support, int rank)
+        {
+            int humanCount = 0;
+            foreach (GraspRecord record in candidates)
             {
-                LocalGrasp = grasps[bestIndex],
+                if (record.source == GraspRecord.SourceHuman) humanCount++;
+            }
+            return new GraspChoice
+            {
+                LocalGrasp = candidates[index].LocalGrasp,
                 FromData = true,
-                Confidence = (float)bestSupport / grasps.Count,
-                Support = bestSupport,
-                GoodCount = grasps.Count,
-                HumanCount = humanCount
+                Confidence = (float)support / candidates.Count,
+                Support = support,
+                GoodCount = candidates.Count,
+                HumanCount = humanCount,
+                Rank = rank,
+                ParentRecordId = candidates[index].record_id
             };
-            return true;
         }
 
         /// <summary>
@@ -155,7 +240,8 @@ namespace SortQuest
             foreach (GraspRecord record in dataset.GoodGrasps(itemType))
             {
                 bool humanForParallel = record.source == GraspRecord.SourceHuman && !profile.IsSuction;
-                bool practicedForThisGripper = record.source == GraspRecord.SourceAugmented && record.gripper == profile.id;
+                bool practicedForThisGripper = record.source == GraspRecord.SourceAugmented && record.gripper == profile.id &&
+                    record.checker_version == GripperCollision.Version && record.feasible == true;
                 if (humanForParallel || practicedForThisGripper)
                 {
                     result.Add(record);

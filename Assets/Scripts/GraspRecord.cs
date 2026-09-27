@@ -18,7 +18,7 @@ namespace SortQuest
         public const string NoBin = "none";
 
         /// <summary>Current record format. 1 = before gripper, input_device, and schema_version existed.</summary>
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 3;
 
         // input_device values: how the demonstration was made.
         public const string InputHands = "hands";                 // real hand tracking
@@ -48,6 +48,10 @@ namespace SortQuest
 
         /// <summary>Record format version; 0 means loaded from an older file and not yet migrated.</summary>
         public int schema_version;
+        public int checker_version = 1;
+        public bool? feasible;
+        public string parent_record_id;
+        public bool? hand_penetration;
 
         /// <summary>What the robot camera saw at the moment of the grasp. Empty id if no image was taken.</summary>
         public ImageData image = new ImageData();
@@ -101,6 +105,9 @@ namespace SortQuest
                 gripper = gripperId,
                 input_device = original.input_device,
                 schema_version = CurrentSchemaVersion,
+                checker_version = GripperCollision.Version,
+                feasible = true,
+                parent_record_id = original.record_id,
                 item_pose_world = original.item_pose_world,
                 image = original.image, // Same scene and item pose, so the original's images apply.
                 outcome = new OutcomeData
@@ -130,7 +137,23 @@ namespace SortQuest
                 input_device = source == SourceRobot ? InputNone : InputUnknown;
                 changed = true;
             }
+            if (checker_version <= 0) { checker_version = 1; changed = true; }
+            // schema_version keeps the format the record was created in; only fill it when missing.
             if (schema_version <= 0) { schema_version = 1; changed = true; }
+            if (outcome != null)
+            {
+                if (string.IsNullOrEmpty(outcome.failure_reason))
+                {
+                    outcome.failure_reason = "none";
+                    changed = true;
+                }
+                // Robot failures from before failure reasons existed: the reason was never saved.
+                if (source == SourceRobot && checker_version == 1 && !outcome.correct && outcome.failure_reason == "none")
+                {
+                    outcome.failure_reason = "unknown";
+                    changed = true;
+                }
+            }
             return changed;
         }
 
@@ -198,6 +221,10 @@ namespace SortQuest
         public bool correct;
         public bool dropped;
         public double hold_s;
+        public string failure_reason = "none";
+        public string stage;
+        public bool? grasp_success;
+        public bool? motion_success;
     }
 
     public static class GraspMath

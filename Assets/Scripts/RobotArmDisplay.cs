@@ -6,7 +6,8 @@ namespace SortQuest
     /// A robot arm that holds the gripper, solved with inverse kinematics every frame.
     /// Like a typical 6-joint industrial arm, a turntable, shoulder, and elbow place the wrist,
     /// and a spherical wrist orients the gripper. The arm is visual (no colliders), but its reach is real:
-    /// CanReach tells the RobotGripper which grasps a real arm of this size could not reach.
+    /// CanReach tells the RobotGripper which grasps a real arm of this size could not reach, and LinksClear
+    /// whether its upper arm and forearm would pass through fixed scenery (belt, bins) at a pose.
     /// </summary>
     public class RobotArmDisplay : MonoBehaviour
     {
@@ -22,6 +23,11 @@ namespace SortQuest
         [SerializeField] private float upperArmLength = 0.85f;
         [SerializeField] private float forearmLength = 0.8f;
 
+        [Header("Link collision check")]
+        [Tooltip("Link radii, used for both the visuals and the scenery check, in meters.")]
+        [SerializeField] private float upperArmRadius = 0.055f;
+        [SerializeField] private float forearmRadius = 0.045f;
+
         [Header("Materials")]
         [SerializeField] private Material bodyMaterial;
         [SerializeField] private Material accentMaterial;
@@ -34,6 +40,9 @@ namespace SortQuest
         /// <summary>True when the arm is stretched as far as it goes and still can't reach the gripper.</summary>
         public bool OutOfReachNow { get; private set; }
 
+        /// <summary>What the last failed LinksClear check hit, for logs.</summary>
+        public string LastObstacle { get; private set; }
+
         private Transform turret;
         private Transform shoulderJoint;
         private Transform upperArm;
@@ -41,6 +50,7 @@ namespace SortQuest
         private Transform forearm;
         private Transform wristJoint;
         private Vector3 lastDirection = Vector3.forward;
+        private static readonly Collider[] LinkHits = new Collider[32];
         private RobotGripper robotGripper;
 
         /// <summary>The selected gripper's wrist length, so the arm meets both two-finger and suction grippers.</summary>
@@ -72,6 +82,54 @@ namespace SortQuest
             return distance >= MinReach && distance <= MaxReach - 0.01f;
         }
 
+        /// <summary>
+        /// True if the upper arm and forearm, posed to hold the gripper at this pose, stay clear of fixed scenery
+        /// (colliders without a Rigidbody, such as the belt and bins). Trash and the player's body are ignored.
+        /// </summary>
+        public bool LinksClear(GripperGrasp pose)
+        {
+            Joints(MountPoint(pose), lastDirection, out Vector3 shoulder, out Vector3 elbow, out Vector3 wrist, out _);
+            return CapsuleClear("upper arm", shoulder, elbow, upperArmRadius) &&
+                   CapsuleClear("forearm", elbow, wrist, forearmRadius);
+        }
+
+        private bool CapsuleClear(string link, Vector3 a, Vector3 b, float radius)
+        {
+            int count = Physics.OverlapCapsuleNonAlloc(a, b, radius, LinkHits, GripperCollision.Mask,
+                QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                Collider hit = LinkHits[i];
+                if (hit.attachedRigidbody == null && !hit.CompareTag("Player"))
+                {
+                    LastObstacle = link + " would hit " + hit.name;
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>Shoulder, elbow (elbow up), and wrist positions that put the wrist at the target.</summary>
+        private void Joints(Vector3 target, Vector3 fallbackDirection, out Vector3 shoulder, out Vector3 elbow,
+            out Vector3 wrist, out Vector3 direction)
+        {
+            shoulder = Shoulder;
+            Vector3 toTarget = target - shoulder;
+            var flat = new Vector3(toTarget.x, 0f, toTarget.z);
+            direction = flat.sqrMagnitude > 1e-6f ? flat.normalized : fallbackDirection;
+
+            float distance = toTarget.magnitude;
+            float reach = Mathf.Clamp(distance, MinReach, MaxReach - 0.001f);
+            float a = upperArmLength;
+            float b = forearmLength;
+            float lift = Mathf.Atan2(toTarget.y, flat.magnitude);
+            float bend = Mathf.Acos(Mathf.Clamp((a * a + reach * reach - b * b) / (2f * a * reach), -1f, 1f));
+            float shoulderAngle = lift + bend;
+
+            elbow = shoulder + direction * (a * Mathf.Cos(shoulderAngle)) + Vector3.up * (a * Mathf.Sin(shoulderAngle));
+            wrist = shoulder + (distance > 1e-4f ? toTarget / distance : direction) * reach;
+        }
+
         private void LateUpdate()
         {
             if (gripper == null)
@@ -87,34 +145,16 @@ namespace SortQuest
         /// </summary>
         private void Solve(Vector3 target)
         {
-            Vector3 shoulder = Shoulder;
-            Vector3 toTarget = target - shoulder;
-            var flat = new Vector3(toTarget.x, 0f, toTarget.z);
-            if (flat.sqrMagnitude > 1e-6f)
-            {
-                lastDirection = flat.normalized;
-            }
-
-            float distance = toTarget.magnitude;
-            float reach = Mathf.Clamp(distance, MinReach, MaxReach - 0.001f);
-            OutOfReachNow = distance > MaxReach;
-
-            float a = upperArmLength;
-            float b = forearmLength;
-            float lift = Mathf.Atan2(toTarget.y, flat.magnitude);
-            float bend = Mathf.Acos(Mathf.Clamp((a * a + reach * reach - b * b) / (2f * a * reach), -1f, 1f));
-            float shoulderAngle = lift + bend;
-
-            Vector3 elbow = shoulder + lastDirection * (a * Mathf.Cos(shoulderAngle)) + Vector3.up * (a * Mathf.Sin(shoulderAngle));
-            Vector3 wrist = shoulder + (distance > 1e-4f ? toTarget / distance : lastDirection) * reach;
+            OutOfReachNow = Vector3.Distance(target, Shoulder) > MaxReach;
+            Joints(target, lastDirection, out Vector3 shoulder, out Vector3 elbow, out Vector3 wrist, out lastDirection);
 
             turret.rotation = Quaternion.LookRotation(lastDirection, Vector3.up);
             shoulderJoint.position = shoulder;
             shoulderJoint.rotation = turret.rotation * Quaternion.Euler(0f, 0f, 90f);
-            VizUtil.PlaceBetween(upperArm, shoulder, elbow, 0.055f);
+            VizUtil.PlaceBetween(upperArm, shoulder, elbow, upperArmRadius);
             elbowJoint.position = elbow;
             elbowJoint.rotation = shoulderJoint.rotation;
-            VizUtil.PlaceBetween(forearm, elbow, wrist, 0.045f);
+            VizUtil.PlaceBetween(forearm, elbow, wrist, forearmRadius);
             wristJoint.position = wrist;
         }
 

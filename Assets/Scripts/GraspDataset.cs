@@ -24,6 +24,23 @@ namespace SortQuest
         [SerializeField] private string playerId = "";
 
         public event Action<GraspRecord> RecordAdded;
+        public event Action<GraspFeasibilityAnnotation> AnnotationAdded;
+        public readonly List<GraspFeasibilityAnnotation> Annotations = new List<GraspFeasibilityAnnotation>();
+        private string AnnotationPath => Path.Combine(Application.persistentDataPath, "grasp-feasibility.jsonl");
+        private readonly List<string> unreadableLines = new List<string>();
+
+        public bool HasAnnotation(string id, string gripper) => Annotations.Exists(a =>
+            a.record_id == id && a.gripper == gripper && a.checker_version == GripperCollision.Version);
+
+        public void Annotate(GraspRecord original, GripperProfile profile, bool feasible)
+        {
+            if (HasAnnotation(original.record_id, profile.id)) return;
+            var annotation = new GraspFeasibilityAnnotation { record_id = original.record_id, gripper = profile.id, feasible = feasible };
+            try { File.AppendAllText(AnnotationPath, GraspJson.Write(annotation) + "\n"); }
+            catch (Exception e) { Debug.LogWarning("[SortQuest] Could not save feasibility annotation: " + e.Message); return; }
+            Annotations.Add(annotation);
+            AnnotationAdded?.Invoke(annotation);
+        }
 
         public string SessionId { get; private set; }
         public string PlayerId { get; private set; }
@@ -41,6 +58,10 @@ namespace SortQuest
             if (loadSavedGrasps)
             {
                 Load();
+                if (File.Exists(AnnotationPath))
+                    foreach (string line in File.ReadLines(AnnotationPath))
+                        try { var a = GraspJson.Read<GraspFeasibilityAnnotation>(line); if (a != null) Annotations.Add(a); }
+                        catch (Exception) { Debug.LogWarning("[SortQuest] Skipped an unreadable feasibility annotation."); }
             }
         }
 
@@ -49,7 +70,7 @@ namespace SortQuest
             records.Add(record);
             try
             {
-                File.AppendAllText(FilePath, JsonUtility.ToJson(record) + "\n");
+                File.AppendAllText(FilePath, GraspJson.Write(record) + "\n");
             }
             catch (Exception e)
             {
@@ -106,7 +127,7 @@ namespace SortQuest
                     }
                     try
                     {
-                        GraspRecord record = JsonUtility.FromJson<GraspRecord>(line);
+                        GraspRecord record = GraspJson.Read<GraspRecord>(line);
                         if (record.MigrateToCurrentSchema())
                         {
                             migrated++;
@@ -116,6 +137,7 @@ namespace SortQuest
                     catch (Exception)
                     {
                         skipped++;
+                        unreadableLines.Add(line);
                     }
                 }
             }
@@ -140,11 +162,20 @@ namespace SortQuest
             try
             {
                 var lines = new List<string>(records.Count);
-                foreach (GraspRecord record in records)
+                foreach (GraspRecord record in LocalRecords)
                 {
-                    lines.Add(JsonUtility.ToJson(record));
+                    lines.Add(GraspJson.Write(record));
                 }
-                File.WriteAllLines(FilePath, lines);
+                lines.AddRange(unreadableLines); // Preserve malformed source data for manual recovery.
+                string temp = FilePath + ".tmp";
+                File.WriteAllLines(temp, lines);
+                if (File.Exists(FilePath))
+                {
+                    string backup = FilePath + ".before-schema-3";
+                    if (!File.Exists(backup)) File.Copy(FilePath, backup);
+                    File.Replace(temp, FilePath, null);
+                }
+                else File.Move(temp, FilePath);
             }
             catch (Exception e)
             {

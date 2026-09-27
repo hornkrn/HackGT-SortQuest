@@ -89,6 +89,10 @@ namespace SortQuest
 
         private void HandleAttempt(RobotGripper.Attempt attempt)
         {
+            if (!attempt.Counts)
+            {
+                return; // Aborted for reasons outside the robot's control.
+            }
             results.Add(attempt.Success);
             Redraw();
         }

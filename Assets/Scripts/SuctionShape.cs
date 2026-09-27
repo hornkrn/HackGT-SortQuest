@@ -39,6 +39,21 @@ namespace SortQuest
         // Cup (0.012) + stem + flange, light ring, and wrist (0.095), matching GripperVisual's suction model.
         public float MountOffset => 0.012f + stemLength + 0.095f;
 
+        public bool BodyOverlaps(GripperGrasp pose, float opening, Rigidbody ignore) =>
+            GripperCollision.BodyOverlaps(this, pose, opening, ignore);
+        public bool SweepBlocked(GripperGrasp fromPose, GripperGrasp toPose, float opening, Rigidbody ignore, float stepMeters) =>
+            GripperCollision.SweepBlocked(this, fromPose, toPose, opening, ignore, stepMeters);
+
+        public void GetParts(System.Collections.Generic.List<GripperPart> parts, float leftOffset, float rightOffset)
+        {
+            parts.Add(new GripperPart("Cup", new Vector3(0, 0, -.004f), new Vector3(cupDiameter, cupDiameter, .008f), 2, true, true));
+            parts.Add(new GripperPart("Bellows", new Vector3(0, 0, -.010f), new Vector3(cupDiameter * .7f, cupDiameter * .7f, .006f), 2, false, true));
+            float top = -(.012f + stemLength);
+            parts.Add(new GripperPart("Stem", new Vector3(0, 0, (-.012f + top) * .5f), new Vector3(.024f, .024f, stemLength), 1, false, true));
+            parts.Add(new GripperPart("StemBand", new Vector3(0, 0, -.012f - stemLength * .3f), new Vector3(.028f, .028f, .01f), 3, false, true));
+            GripperShape.AddWrist(parts, top - .01f);
+        }
+
         public bool PathBlocked(GripperGrasp grasp, float approachDistance, Rigidbody ignore)
         {
             // The cup's swept volume from the line-up point to 1 cm short of contact.

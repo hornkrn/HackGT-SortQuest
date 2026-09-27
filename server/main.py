@@ -23,6 +23,10 @@ InputDevice = Literal['hands', 'controllers', 'simulator', 'unknown', 'none']
 GRIPPER_PATTERN = r'^[a-z0-9_]{1,40}$'
 # Records sent before grippers existed were all for the standard two-finger gripper.
 STANDARD_GRIPPER = 'parallel_100mm'
+# 'unknown' marks robot failures saved before failure reasons existed.
+FailureReason = Literal['none', 'collision_at_grasp', 'collision_on_approach', 'path_blocked',
+                        'collision_during_motion', 'no_contact', 'no_seal', 'out_of_reach', 'arm_collision', 'aborted',
+                        'unknown']
 
 
 class Model(BaseModel):
@@ -45,6 +49,10 @@ class Outcome(Model):
     correct: bool
     dropped: bool
     hold_s: float
+    failure_reason: FailureReason = 'none'
+    stage: Optional[Literal['plan', 'approach', 'grasp', 'carry', 'release']] = None
+    grasp_success: Optional[bool] = None
+    motion_success: Optional[bool] = None
 
 
 class Image(Model):
@@ -73,6 +81,10 @@ class GraspRecord(Model):
     item_pose_world: Pose
     outcome: Outcome
     image: Optional[Image] = None
+    checker_version: int = Field(default=1, ge=1)
+    feasible: Optional[bool] = None
+    parent_record_id: Optional[str] = Field(default=None, pattern=r'^[0-9a-f]{32}$')
+    hand_penetration: Optional[bool] = None
 
     @field_validator('timestamp')
     @classmethod
@@ -93,6 +105,21 @@ class GraspRecord(Model):
 
 class Batch(Model):
     records: List[GraspRecord] = Field(min_length=1, max_length=100)
+
+
+class FeasibilityAnnotation(Model):
+    record_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+    gripper: str = Field(pattern=GRIPPER_PATTERN)
+    checker_version: int = Field(ge=2)
+    feasible: bool
+    context: Literal['prefab_on_standin_belt'] = 'prefab_on_standin_belt'
+
+    def document(self):
+        return {**self.model_dump(), '_id': f'{self.record_id}:{self.gripper}:{self.checker_version}'}
+
+
+class AnnotationBatch(Model):
+    annotations: List[FeasibilityAnnotation] = Field(min_length=1, max_length=100)
 
 
 @asynccontextmanager
@@ -137,8 +164,24 @@ def health():
 
 @app.post('/grasps', dependencies=[Depends(require_api_key)])
 def upload_grasps(batch: Batch):
+    return insert_idempotent(app.state.db.grasps, [record.document() for record in batch.records])
+
+
+@app.post('/grasp-annotations', dependencies=[Depends(require_api_key)])
+def upload_annotations(batch: AnnotationBatch):
+    # Separate collection: never rewrite human grasp coordinates, outcomes, or input provenance.
+    return insert_idempotent(app.state.db.grasp_annotations, [row.document() for row in batch.annotations])
+
+
+@app.get('/grasp-annotations', dependencies=[Depends(require_api_key)])
+def get_annotations(record_id: str = Query(pattern=r'^[0-9a-f]{32}$')):
+    return {'annotations': list(app.state.db.grasp_annotations.find(
+        {'record_id': record_id}, {'_id': 0}).limit(100).max_time_ms(5000))}
+
+
+def insert_idempotent(collection, documents):
     try:
-        result = app.state.db.grasps.insert_many([record.document() for record in batch.records], ordered=False)
+        result = collection.insert_many(documents, ordered=False)
         return {'inserted': len(result.inserted_ids), 'duplicates': 0}
     except BulkWriteError as exc:
         details = exc.details
@@ -154,9 +197,15 @@ def get_grasps(
     good: Optional[bool] = None,
     source: Optional[str] = None,
     gripper: Optional[str] = Query(default=None, pattern=GRIPPER_PATTERN),
+    checker_version: Optional[int] = Query(default=None, ge=1),
+    feasible: Optional[bool] = None,
     limit: int = Query(default=500, ge=1, le=1000),
 ):
     filters = {}
+    if checker_version is not None:
+        filters['checker_version'] = {'$in': [1, None]} if checker_version == 1 else checker_version
+    if feasible is not None:
+        filters['feasible'] = feasible
     if item_type is not None:
         filters['item_type'] = item_type
     if gripper is not None:
@@ -183,8 +232,16 @@ def stats():
         'counts': [{'$group': {'_id': {'item_type': '$item_type', 'source': '$source', 'gripper': gripper}, 'total': {'$sum': 1}, 'good': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id.item_type': 1, '_id.source': 1, '_id.gripper': 1}}],
         'robot_daily': [{'$match': {'source': 'robot'}}, {'$group': {'_id': {'$dateToString': {'format': '%Y-%m-%d', 'date': '$created_at', 'timezone': 'UTC'}}, 'attempts': {'$sum': 1}, 'successes': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id': 1}}],
         'robot_by_gripper': [{'$match': {'source': 'robot'}}, {'$group': {'_id': gripper, 'attempts': {'$sum': 1}, 'successes': {'$sum': {'$cond': [good, 1, 0]}}}}, {'$sort': {'_id': 1}}],
+        'failure_reasons': [{'$match': {'source': 'robot'}}, {'$group': {'_id': {
+            # Older documents have no reason: a success had none, a failure's reason was never saved.
+            'reason': {'$ifNull': ['$outcome.failure_reason', {'$cond': [good, 'none', 'unknown']}]},
+            'stage': {'$ifNull': ['$outcome.stage', 'unknown']},
+            'checker_version': {'$ifNull': ['$checker_version', 1]}, 'gripper': gripper},
+            'total': {'$sum': 1}}}, {'$sort': {'_id.reason': 1}}],
     }}], maxTimeMS=5000))
     counts = [{**row['_id'], 'total': row['total'], 'good': row['good']} for row in result['counts']]
     daily = [{'date': row['_id'], 'attempts': row['attempts'], 'successes': row['successes'], 'success_rate': row['successes'] / row['attempts']} for row in result['robot_daily']]
     by_gripper = [{'gripper': row['_id'], 'attempts': row['attempts'], 'successes': row['successes'], 'success_rate': row['successes'] / row['attempts']} for row in result['robot_by_gripper']]
-    return {'total': sum(row['total'] for row in counts), 'counts': counts, 'robot_daily': daily, 'robot_by_gripper': by_gripper}
+    failures = [{**row['_id'], 'total': row['total']} for row in result['failure_reasons']]
+    return {'total': sum(row['total'] for row in counts), 'counts': counts, 'robot_daily': daily,
+            'robot_by_gripper': by_gripper, 'failure_reasons': failures}

@@ -107,6 +107,14 @@ namespace SortQuest
         private readonly List<ItemType> lessons = new List<ItemType>();
         private int robotRoundAttempts;
         private int robotRoundSuccesses;
+
+        // Items that finished their trip down the belt during the robot's turn (landed in a bin or were missed),
+        // and how many of them the robot put in the correct bin. Failed grabs and items it never reached both count.
+        private int robotRoundItems;
+        private int robotRoundItemsSorted;
+        private int firstRoundItems;
+        private int firstRoundItemsSorted;
+        private readonly HashSet<TrashItem> takenByPlayer = new HashSet<TrashItem>();
         private int variationsTried;
         private int variationsKept;
         private readonly Dictionary<ItemType, Tally> firstRobotRound = new Dictionary<ItemType, Tally>();
@@ -142,6 +150,7 @@ namespace SortQuest
             if (robot != null) robot.AttemptFinished += HandleRobotAttempt;
             if (augmenter != null) augmenter.Practiced += HandlePracticed;
             if (catalog != null) catalog.Changed += HandleGripperChanged;
+            if (spawner != null) spawner.ItemSpawned += HandleItemSpawned;
         }
 
         private void OnDisable()
@@ -150,6 +159,7 @@ namespace SortQuest
             if (robot != null) robot.AttemptFinished -= HandleRobotAttempt;
             if (augmenter != null) augmenter.Practiced -= HandlePracticed;
             if (catalog != null) catalog.Changed -= HandleGripperChanged;
+            if (spawner != null) spawner.ItemSpawned -= HandleItemSpawned;
         }
 
         private void HandleGripperChanged(GripperProfile profile)
@@ -304,6 +314,8 @@ namespace SortQuest
                     goodGraspsThisRound = 0;
                     variationsTried = 0;
                     variationsKept = 0;
+                    firstRoundItems = 0;
+                    firstRoundItemsSorted = 0;
                     if (scoreBoard != null) scoreBoard.ResetScore();
                     if (robot != null) robot.ResetStats();
                     break;
@@ -328,6 +340,9 @@ namespace SortQuest
                     }
                     robotRoundAttempts = 0;
                     robotRoundSuccesses = 0;
+                    robotRoundItems = 0;
+                    robotRoundItemsSorted = 0;
+                    takenByPlayer.Clear();
                     StartSpawning(IsRetry ? TeachItem : null);
                     if (robot != null)
                     {
@@ -418,6 +433,44 @@ namespace SortQuest
             }
         }
 
+        private void HandleItemSpawned(TrashItem item)
+        {
+            item.Grabbed += HandleItemGrabbed;
+            item.Sorted += HandleItemSorted;
+            item.Missed += HandleItemMissed;
+        }
+
+        private void HandleItemGrabbed(TrashItem item)
+        {
+            if (State == GameState.RobotRound) takenByPlayer.Add(item);
+        }
+
+        private void HandleItemSorted(TrashItem item, SortingBin bin, bool correct)
+        {
+            CountRobotRoundItem(item, correct && item.LastHeldByRobot);
+        }
+
+        private void HandleItemMissed(TrashItem item)
+        {
+            CountRobotRoundItem(item, false);
+        }
+
+        private void CountRobotRoundItem(TrashItem item, bool sortedByRobot)
+        {
+            // An item a person grabbed during the robot's turn wasn't the robot's to sort.
+            if (State != GameState.RobotRound || takenByPlayer.Contains(item))
+            {
+                return;
+            }
+            robotRoundItems++;
+            if (sortedByRobot) robotRoundItemsSorted++;
+            if (!IsRetry)
+            {
+                firstRoundItems++;
+                if (sortedByRobot) firstRoundItemsSorted++;
+            }
+        }
+
         private void HandlePracticed(GraspRecord original, int tried, int kept)
         {
             variationsTried += tried;
@@ -426,7 +479,7 @@ namespace SortQuest
 
         private void HandleRobotAttempt(RobotGripper.Attempt attempt)
         {
-            if (State != GameState.RobotRound || attempt.Item == null)
+            if (State != GameState.RobotRound || attempt.Item == null || !attempt.Counts)
             {
                 return;
             }
@@ -619,6 +672,7 @@ namespace SortQuest
                         ? $"Can it grab the {TrashTypes.DisplayName(TeachItem.Value).ToLowerInvariant()} now?"
                         : "Watch it use what you taught it.");
                     body.AppendLine($"{robotRoundSuccesses} of {robotRoundAttempts} grasps worked");
+                    body.AppendLine($"Sorted {robotRoundItemsSorted} of {robotRoundItems} items that came down the belt");
                     body.Append(IsRetry
                         ? $"Mastered once {activeMasteryRate * 100f:F0}% of its grasps work"
                         : $"Mastered {CountMastered()} of {ItemCount} items so far");
@@ -671,7 +725,8 @@ namespace SortQuest
                 attempts += tally.Attempts;
                 successes += tally.Successes;
             }
-            body.AppendLine($"Robot's turn: {successes} of {attempts} grasps worked");
+            body.AppendLine($"Robot's turn: {successes} of {attempts} grasps worked, " +
+                            $"sorted {firstRoundItemsSorted} of {firstRoundItems} items");
 
             body.AppendLine($"Robot mastered {CountMastered()} of {ItemCount} items after {lessonsGiven} lessons");
             foreach (ItemType taught in lessons)

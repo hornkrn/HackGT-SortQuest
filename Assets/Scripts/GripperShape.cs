@@ -36,6 +36,47 @@ namespace SortQuest
         // Palm housing, flange, and wrist behind the fingers, matching GripperVisual's two-finger model.
         public float MountOffset => fingerLength - fingertipPastGrasp + 0.135f;
 
+        public bool BodyOverlaps(GripperGrasp pose, float opening, Rigidbody ignore) =>
+            GripperCollision.BodyOverlaps(this, pose, opening, ignore);
+        public bool SweepBlocked(GripperGrasp fromPose, GripperGrasp toPose, float opening, Rigidbody ignore, float stepMeters) =>
+            GripperCollision.SweepBlocked(this, fromPose, toPose, opening, ignore, stepMeters);
+
+        public void GetParts(System.Collections.Generic.List<GripperPart> parts, float leftOffset, float rightOffset)
+        {
+            float front = fingertipPastGrasp - fingerLength;
+            float width = maxOpening + 2 * fingerThickness + .03f;
+            parts.Add(new GripperPart("Housing", new Vector3(0, 0, front - .02f), new Vector3(width, .055f, .04f)));
+            parts.Add(new GripperPart("Rail", new Vector3(0, 0, front - .002f), new Vector3(width - .01f, .014f, .004f), 1));
+            parts.Add(new GripperPart("Stripe", new Vector3(0, .0285f, front - .02f), new Vector3(width + .002f, .003f, .02f), 3));
+            AddWrist(parts, front - .05f);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float offset = side < 0 ? leftOffset : rightOffset;
+                float pad = Mathf.Min(.004f, fingerThickness * .4f);
+                float link = fingerThickness - pad;
+                string name = side < 0 ? "Left" : "Right";
+                float x = side * (offset + pad + link * .5f);
+                parts.Add(new GripperPart(name + "Carriage", new Vector3(x, 0, front + .006f), new Vector3(.024f, .04f, .02f)));
+                parts.Add(new GripperPart(name + "Finger", new Vector3(x, 0, fingertipPastGrasp - fingerLength * .5f), new Vector3(link, fingerWidth, fingerLength), 1));
+                parts.Add(new GripperPart(name + "Pad", new Vector3(side * (offset + pad * .5f), 0, fingertipPastGrasp - fingerLength * .3f), new Vector3(pad, fingerWidth * 1.1f, fingerLength * .55f), 2, true));
+            }
+        }
+
+        internal static void AddWrist(System.Collections.Generic.List<GripperPart> parts, float z)
+        {
+            parts.Add(new GripperPart("Flange", new Vector3(0, 0, z), new Vector3(.075f, .075f, .02f), 1, false, true));
+            parts.Add(new GripperPart("StatusLight", new Vector3(0, 0, z - .012f), new Vector3(.08f, .08f, .004f), 4, false, true));
+            parts.Add(new GripperPart("Wrist", new Vector3(0, 0, z - .05f), new Vector3(.05f, .05f, .07f), 0, false, true));
+            parts.Add(new GripperPart("WristRing", new Vector3(0, 0, z - .05f), new Vector3(.054f, .054f, .006f), 3, false, true));
+        }
+
+        public bool ContactOffsets(GripperGrasp grasp, Rigidbody item, out float left, out float right)
+        {
+            left = CloseUntilTouch(grasp, true, item, out bool leftTouch);
+            right = CloseUntilTouch(grasp, false, item, out bool rightTouch);
+            return leftTouch && rightTouch;
+        }
+
         public bool TryGrasp(GripperGrasp grasp, Rigidbody item, out float width)
         {
             return TryClose(grasp, item, out width);

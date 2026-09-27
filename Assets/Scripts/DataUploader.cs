@@ -43,6 +43,7 @@ namespace SortQuest
             dataset.RecordAdded -= Queue;
             dataset.RecordAdded += Queue;
             StartCoroutine(UploadLoop());
+            StartCoroutine(UploadAnnotations());
         }
 
         private void RestoreQueue()
@@ -51,7 +52,7 @@ namespace SortQuest
             {
                 if (File.Exists(QueuePath))
                 {
-                    var saved = JsonUtility.FromJson<SortQuestApi.Records>(File.ReadAllText(QueuePath));
+                    var saved = GraspJson.Read<SortQuestApi.Records>(File.ReadAllText(QueuePath));
                     if (saved?.records != null) foreach (var record in saved.records) AddPending(record);
                 }
             }
@@ -70,7 +71,7 @@ namespace SortQuest
             try
             {
                 string temp = QueuePath + ".tmp";
-                File.WriteAllText(temp, JsonUtility.ToJson(new SortQuestApi.Records { records = pending.ToArray() }));
+                File.WriteAllText(temp, GraspJson.Write(new SortQuestApi.Records { records = pending.ToArray() }));
                 if (File.Exists(QueuePath)) File.Replace(temp, QueuePath, null);
                 else File.Move(temp, QueuePath);
             }
@@ -103,6 +104,27 @@ namespace SortQuest
                 {
                     Debug.LogWarning("[SortQuest] " + LastError + " Queued records will retry.", this);
                     retry = Mathf.Min(60, retry * 2);
+                }
+                yield return new WaitForSecondsRealtime(retry);
+            }
+        }
+
+        // The durable append-only annotation journal is its own queue. Replay is idempotent on the server.
+        private IEnumerator UploadAnnotations()
+        {
+            int sent = 0;
+            float retry = Mathf.Max(1, uploadInterval);
+            while (true)
+            {
+                if (sent < dataset.Annotations.Count)
+                {
+                    var batch = dataset.Annotations.GetRange(sent, Mathf.Min(100, dataset.Annotations.Count - sent)).ToArray();
+                    bool acknowledged = false;
+                    yield return api.UploadAnnotations(batch, result => acknowledged = result != null &&
+                        result.inserted >= 0 && result.duplicates >= 0 && result.inserted + result.duplicates == batch.Length,
+                        error => Debug.LogWarning("[SortQuest] Annotation upload retained for retry: " + error));
+                    if (acknowledged) { sent += batch.Length; retry = Mathf.Max(1, uploadInterval); }
+                    else retry = Mathf.Min(60, retry * 2);
                 }
                 yield return new WaitForSecondsRealtime(retry);
             }

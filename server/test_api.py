@@ -101,6 +101,93 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(app.state.db.grasps.find.call_args.args[0]['gripper'], {'$in': ['parallel_100mm', None]})
         self.assertEqual(self.client.get('/grasps?gripper=Bad!').status_code, 422)
 
+    def test_collision_fields_default_for_old_records(self):
+        app.state.db.grasps.insert_many.return_value.inserted_ids = ['a' * 32]
+        self.assertEqual(self.client.post('/grasps', json={'records': [record()]}).status_code, 200)
+        document = app.state.db.grasps.insert_many.call_args.args[0][0]
+        self.assertEqual((document['checker_version'], document['outcome']['failure_reason']), (1, 'none'))
+        for field in ('feasible', 'parent_record_id', 'hand_penetration'):
+            self.assertNotIn(field, document)
+        for field in ('stage', 'grasp_success', 'motion_success'):
+            self.assertNotIn(field, document['outcome'])
+
+    def test_collision_fields_are_stored_and_validated(self):
+        app.state.db.grasps.insert_many.return_value.inserted_ids = ['b' * 32]
+        outcome = dict(bin='none', correct=False, dropped=False, hold_s=0, failure_reason='collision_on_approach',
+                       stage='plan', grasp_success=False, motion_success=False)
+        robot = dict(record(), record_id='b' * 32, source='robot', hand='gripper', schema_version=3, checker_version=2,
+                     parent_record_id='a' * 32, hand_penetration=None, outcome=outcome)
+        self.assertEqual(self.client.post('/grasps', json={'records': [robot]}).status_code, 200)
+        document = app.state.db.grasps.insert_many.call_args.args[0][0]
+        self.assertEqual((document['checker_version'], document['parent_record_id']), (2, 'a' * 32))
+        self.assertEqual((document['outcome']['failure_reason'], document['outcome']['stage']),
+                         ('collision_on_approach', 'plan'))
+        self.assertNotIn('hand_penetration', document)  # Null means "not measured", so it is left out.
+        for reason in ('unknown', 'arm_collision', 'aborted'):
+            changed = dict(robot, outcome=dict(outcome, failure_reason=reason))
+            self.assertEqual(self.client.post('/grasps', json={'records': [changed]}).status_code, 200)
+        bad_changes = ({'outcome': dict(outcome, failure_reason='gremlins')}, {'outcome': dict(outcome, stage='lunch')},
+                       {'checker_version': 0}, {'parent_record_id': 'not-an-id'}, {'feasible': 'maybe'})
+        for change in bad_changes:
+            self.assertEqual(self.client.post('/grasps', json={'records': [dict(robot, **change)]}).status_code, 422)
+
+    def test_annotations_upload_is_idempotent_and_validated(self):
+        annotation = dict(record_id='a' * 32, gripper='suction_40mm', checker_version=2, feasible=False)
+        app.state.db.grasp_annotations.insert_many.return_value.inserted_ids = ['x']
+        response = self.client.post('/grasp-annotations', json={'annotations': [annotation]})
+        self.assertEqual(response.json(), {'inserted': 1, 'duplicates': 0})
+        document = app.state.db.grasp_annotations.insert_many.call_args.args[0][0]
+        self.assertEqual(document['_id'], 'a' * 32 + ':suction_40mm:2')
+        self.assertEqual(document['context'], 'prefab_on_standin_belt')
+        app.state.db.grasps.insert_many.assert_not_called()  # Human records are never rewritten.
+
+        app.state.db.grasp_annotations.insert_many.side_effect = BulkWriteError(
+            {'nInserted': 0, 'writeErrors': [{'code': 11000}], 'writeConcernErrors': []})
+        response = self.client.post('/grasp-annotations', json={'annotations': [annotation]})
+        self.assertEqual(response.json(), {'inserted': 0, 'duplicates': 1})
+
+        app.state.db.grasp_annotations.insert_many.reset_mock()
+        for change in ({'checker_version': 1}, {'record_id': 'bad'}, {'feasible': None}, {'context': 'real_world'},
+                       {'gripper': 'Bad!'}, {'extra': 1}):
+            body = {'annotations': [dict(annotation, **change)]}
+            self.assertEqual(self.client.post('/grasp-annotations', json=body).status_code, 422)
+        self.assertEqual(self.client.post('/grasp-annotations', json={'annotations': []}).status_code, 422)
+        app.state.db.grasp_annotations.insert_many.assert_not_called()
+
+    def test_annotations_read(self):
+        cursor = app.state.db.grasp_annotations.find.return_value.limit.return_value.max_time_ms.return_value
+        cursor.__iter__.return_value = iter([{'record_id': 'a' * 32, 'feasible': True}])
+        response = self.client.get('/grasp-annotations?record_id=' + 'a' * 32)
+        self.assertEqual(response.json(), {'annotations': [{'record_id': 'a' * 32, 'feasible': True}]})
+        filters, projection = app.state.db.grasp_annotations.find.call_args.args
+        self.assertEqual((filters, projection), ({'record_id': 'a' * 32}, {'_id': 0}))
+        self.assertEqual(self.client.get('/grasp-annotations?record_id=bad').status_code, 422)
+        self.assertEqual(self.client.get('/grasp-annotations').status_code, 422)
+
+    def test_checker_and_feasible_filters(self):
+        cursor = app.state.db.grasps.find.return_value.sort.return_value.limit.return_value.max_time_ms.return_value
+        cursor.__iter__.return_value = iter([])
+        self.assertEqual(self.client.get('/grasps?checker_version=2&feasible=true').status_code, 200)
+        filters = app.state.db.grasps.find.call_args.args[0]
+        self.assertEqual((filters['checker_version'], filters['feasible']), (2, True))
+        self.assertEqual(self.client.get('/grasps?checker_version=1').status_code, 200)
+        self.assertEqual(app.state.db.grasps.find.call_args.args[0]['checker_version'], {'$in': [1, None]})
+        self.assertEqual(self.client.get('/grasps?checker_version=0').status_code, 422)
+
+    def test_stats_failure_reasons(self):
+        app.state.db.grasps.aggregate.return_value = iter([{
+            'counts': [{'_id': {'item_type': 'battery_aa', 'source': 'robot', 'gripper': 'parallel_100mm'},
+                        'total': 3, 'good': 1}],
+            'robot_daily': [], 'robot_by_gripper': [],
+            'failure_reasons': [{'_id': {'reason': 'unknown', 'stage': 'unknown', 'checker_version': 1,
+                                         'gripper': 'parallel_100mm'}, 'total': 2}]}])
+        body = self.client.get('/stats').json()
+        self.assertEqual(body['failure_reasons'], [{'reason': 'unknown', 'stage': 'unknown', 'checker_version': 1,
+                                                    'gripper': 'parallel_100mm', 'total': 2}])
+        facet = app.state.db.grasps.aggregate.call_args.args[0][0]['$facet']
+        reason = facet['failure_reasons'][1]['$group']['_id']['reason']
+        self.assertEqual(reason['$ifNull'][1]['$cond'][1:], ['none', 'unknown'])
+
     def test_write_concern_failure_is_retryable(self):
         app.state.db.grasps.insert_many.side_effect = BulkWriteError({'nInserted': 1, 'writeErrors': [], 'writeConcernErrors': [{'code': 64}]})
         self.assertEqual(self.client.post('/grasps', json={'records': [record()]}).status_code, 503)

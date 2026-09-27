@@ -33,6 +33,7 @@ namespace SortQuest
         public string ApiKey { get => apiKey; set => apiKey = value; }
 
         [Serializable] public class Records { public GraspRecord[] records; }
+        [Serializable] public class Annotations { public GraspFeasibilityAnnotation[] annotations; }
         [Serializable] public class UploadResult { public int inserted; public int duplicates; }
         [Serializable] public class HealthResult { public bool ok; }
         [Serializable] public class Count { public string item_type; public string source; public int total; public int good; }
@@ -52,7 +53,7 @@ namespace SortQuest
             }
             try
             {
-                LocalSettings settings = JsonUtility.FromJson<LocalSettings>(asset.text);
+                LocalSettings settings = GraspJson.Read<LocalSettings>(asset.text);
                 if (!string.IsNullOrEmpty(settings.baseUrl)) baseUrl = settings.baseUrl;
                 if (!string.IsNullOrEmpty(settings.apiKey)) apiKey = settings.apiKey;
             }
@@ -66,7 +67,10 @@ namespace SortQuest
             => Request("GET", "/health", null, success, failure);
 
         public IEnumerator Upload(GraspRecord[] records, Action<UploadResult> success, Action<string> failure)
-            => Request("POST", "/grasps", JsonUtility.ToJson(new Records { records = records }), success, failure);
+            => Request("POST", "/grasps", GraspJson.Write(new Records { records = records }), success, failure);
+
+        public IEnumerator UploadAnnotations(GraspFeasibilityAnnotation[] annotations, Action<UploadResult> success, Action<string> failure)
+            => Request("POST", "/grasp-annotations", GraspJson.Write(new Annotations { annotations = annotations }), success, failure);
 
         public IEnumerator ReadGoodGrasps(string itemType, Action<Records> success, Action<string> failure, int limit = 500)
             => Request("GET", "/grasps?good=true&source=human,augmented&item_type=" +
@@ -102,7 +106,7 @@ namespace SortQuest
                     yield break;
                 }
                 T result;
-                try { result = JsonUtility.FromJson<T>(request.downloadHandler.text); }
+                try { result = GraspJson.Read<T>(request.downloadHandler.text); }
                 catch (Exception) { failure?.Invoke("API returned invalid JSON."); yield break; }
                 success?.Invoke(result);
             }
